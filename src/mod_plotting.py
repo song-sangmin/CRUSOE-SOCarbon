@@ -19,7 +19,7 @@ from   cmocean               import cm as cmo
 
 
 # for map
-import shapefile
+# import shapefile
 import cartopy                                           # to make map
 import matplotlib.path       as     mpath                # to draw circle for map
 import cartopy.crs           as     ccrs                 # for map projection
@@ -32,16 +32,36 @@ import cartopy.feature       as     cfeature             # to add land features 
 import pyproj  
 import geopandas             as     gpd                  # for adding shapefiles of frontal zones 
 from   osgeo                 import gdal
-import scikit_posthocs       as     sp                   # for stats
-
+# import scikit_posthocs       as     sp                   # for stats
 
 # for boxenplots
 import seaborn               as     sns
 from   scipy.stats           import kruskal              # for boxenplot stats
 from   scipy.stats           import mannwhitneyu         # for split violin plot stats
+import gsw
+
+
+def my_params(size=12, font_family='Futura', title_size = 14):
+    """ 
+    Use: plt.rcParams.update(crplot.my_params(size=16))
+    """
+    plt.style.use('default')
+    params = {'legend.fontsize': size, 
+            'xtick.labelsize':size, 
+            'ytick.labelsize':size, 
+            'font.size':size,
+            'font.family':font_family,
+            'mathtext.fontset':'stixsans',
+            'mathtext.bf':'STIXGeneral:bold',
+            'axes.titlesize': title_size,
+            'figure.titlesize': title_size,}
+    return params
+
+
 
 # %% Import data for fronts
 
+import shapefile
 so_fronts = shapefile.Reader('./shapefiles/fronts/so_fronts.shp') 
 stf_mod   = shapefile.Reader('./shapefiles/fronts/stf_mod/stf_mod.shp')
 
@@ -51,18 +71,107 @@ pf   = so_fronts.shape(2).points
 sacc = so_fronts.shape(3).points
 sie  = so_fronts.shape(4).points
 
+stf_patch  = plt.Polygon(stf,  fill=False, edgecolor='grey',   zorder=15)
+saf_patch  = plt.Polygon(saf,  fill=False, edgecolor='grey',   zorder=14)
+pf_patch   = plt.Polygon(pf,   fill=False, edgecolor='grey',    zorder=13)
+sacc_patch = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=12)
+sie_patch  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=0,  facecolor='darkgrey', alpha=0.4)
+
+# ax1.add_patch(stf_patch)
+# ax1.add_patch(saf_patch)
+# ax1.add_patch(pf_patch)
+# ax1.add_patch(sacc_patch)
+# ax1.add_patch(sie_patch)
+
+
+max_latitude:          float = -30
+add_gridlines:         bool  = True
+color_land:            bool  = False
+land_edgecolor:        str   = 'grey'
+land_facecolor:        str   = 'grey'
+fontsize:              float = 10
+map_facecolor:         str   = 'white'
+coast_linewidth:       float = 0.3
+gridlines_linewidth:   float = 0.5
+girdlines_color:       str   = 'grey'
+gridlines_alpha:       float = 0.5
+longitude_label_color: str   = 'grey'
+latitude_label_color:  str   = 'grey'
+
+
+
+# %% Set up units
+umol_unit = (r'$\mathbf{[\mu} \mathregular{mol~kg} \mathbf{^{-1}]}$')
+# umol_unit = (r'$[\mu \mathregular{mol~kg^{-1}}]$')
+eke_unit = (r'$\mathbf{[m^2~s^{-2}]}$')
+umol_unit_squared = (r'$\mathbf{[\mu} \mathregular{mol^2~kg} \mathbf{^{-2}]}$')
+
+sigma_unit = (r'$\mathbf{\sigma_0}$ ' + '[kg' + r'$\mathbf{~m^{-3}]}$')
+# spice_unit = (r'$ \mathbf{\tau} $ ' + '$\mathbf{[m^{-3}~}$' + 'kg]') #dimensionless
+backscatter_unit = ('log([m'  + r'$ \mathbf{^{-1}} $' + '])')
+par_unit = ('[W m' + r'$ \mathbf{^{-1}} $' + ']')
+hb_unit = ('[s' + r'$ \mathregular{^{-2}} $' + ']')
+fsle_unit =  ('[days ' + r'$\mathbf{^{-1}}$' + ']')
+
+delta_title = (r'$\mathbf{\Delta }\mathregular{N_{ML}}$ ')
+overline_title = (r'$\overline{\mathregular{N}} \mathregular{_{ML}}$ ')
+hvar_title = ('s'+ r'$ \mathbf{^2_{H,NO_3}}$ ')
+bbp_title = ('bbp' + r'$_{\mathregular{470}} $')
+hb_title = ('|' + r'$\mathbf{\nabla_h}\mathregular{b}$' + '|')
 
 
 # %% Functions
 
-##################################################################
-######  Set up Southern Ocean Map  ###############################
-##################################################################
+# %% T-S Diagrams
+
+def setup_TS_contours(df, ax=None, contour_font_size=12):
+    """  
+    Add T-S contours to a given axis.
+    @param: df: dataframe with 'CT' and 'SA' as columns
+    """
+
+    if ax == None:
+        fig = plt.figure(figsize=(9,7))
+        ax = fig.gca()
+
+    # Add density contours
+    # Figure out boudaries (mins and maxs)
+    smin = df.SA.min() -.2
+    smax = df.SA.max() +.2
+
+    tmin= df.CT.min() - 1.2
+    tmax = df.CT.max() + 0.5
+
+    # Calculate how many gridcells we need in the x and y dimensions
+    xdim = int(round((smax-smin)/0.1+1,0))
+    ydim = int(round((tmax-tmin)+1,0))
+    
+    # Create empty grid of zeros
+    dens = np.zeros((ydim,xdim))
+    
+    # Create temp and salt vectors of appropiate dimensions
+    ti = np.linspace(1,ydim-1,ydim)+tmin
+    si = np.linspace(1,xdim-1,xdim)*0.1+smin
+
+    # Loop to fill in grid with densities
+    for j in range(0,int(ydim)):
+        for i in range(0, int(xdim)):
+            dens[j,i]=gsw.sigma0(si[i],ti[j])
+
+    CS = ax.contour(si,ti,dens, linestyles='dashed', colors='k', alpha=0.4, zorder=1)
+    ax.clabel(CS, fmt='%1.2f', fontsize=contour_font_size)
+    ax.set_xlabel('SA')
+    ax.set_ylabel('CT')
+
+    return ax
+
+
+# %%  Set up Southern Ocean Map  
 
 def setup_SO_axes(
     ax:                    matplotlib.axes.Axes,
     fig:                   matplotlib.figure.Figure,
-    max_latitude:          float = -30,
+    max_latitude:          float = -35,
     add_gridlines:         bool  = True,
     color_land:            bool  = False,
     land_edgecolor:        str   = 'grey',
@@ -88,8 +197,8 @@ def setup_SO_axes(
     """
     
     
-    ### Limit the map to -40 degrees latitude and below.
-    ax.set_extent([-180, 180, -90, max_latitude+0.6], ccrs.PlateCarree())  # set to -29.4 for map out to 30 degrees or -39.4 for map out to 40 degrees
+    ### Limit the map to max latitude and below.
+    ax.set_extent([-180, 180, -90, max_latitude], ccrs.PlateCarree())  # set to -29.4 for map out to 30 degrees or -39.4 for map out to 40 degrees
    
     ### Tune the subplot layout
     # fig.subplots_adjust(bottom=0.05, top=0.95, left=0.04, right=0.95, wspace=0.02)
@@ -246,3 +355,74 @@ def discrete_cmap(N, base_cmap=None):
 
 
 # plt.show()
+
+
+
+def plot_histogram_of_profile_locations(ploc, profiles, lon_range, lat_range,
+                                        source='all', binsize=2,
+                                        bathy_fname="bathy.nc",
+                                        lev_range=range(-6000,1,500),
+                                        myPlotLevels=30, vmin=0, vmax=200):
+#
+# source : may be 'argo', 'ctd', 'seal', or 'all'
+# binsize : size of  lat-lon bins in degrees
+#
+
+    # print
+    print("plot_tools.plot_histogram_of_profile_locations")
+
+    # select
+    if source=='all':
+        df = profiles
+    else:
+        df = profiles.where(profiles.source==source, drop=True)
+
+    # bins
+    lon_bins = np.arange(lon_range[0], lon_range[1], binsize)
+    lat_bins = np.arange(lat_range[0], lat_range[1], binsize)
+
+    # histogram
+    hLatLon = histogram(df.longitude, df.latitude, bins=[lon_bins, lat_bins])
+
+    # load bathymetry
+    bds = io.load_bathymetry(bathy_fname)
+    bathy_lon = bds['longitude'][:]
+    bathy_lat = bds['latitude'][:]
+    bathy = bds['bathy'][:]
+
+    #
+    #-- original attempt
+    #
+
+    # cartopy plot
+    plt.figure(figsize=(17, 13))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.set_extent([lon_range[0], lon_range[1], lat_range[0], lat_range[1]],
+                    ccrs.PlateCarree())
+    # colormesh histogram
+    CS = plt.pcolormesh(lon_bins, lat_bins, hLatLon.T, transform=ccrs.PlateCarree())
+    plt.clim(vmin, vmax)
+    ax.coastlines(resolution='50m',color='white')
+    ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                 linewidth=2, color='gray', alpha=0.5, linestyle='--')
+    ax.add_feature(cartopy.feature.LAND)
+    plt.savefig(ploc + 'histogram_lat_lon_map_' + source + '.png', bbox_inches='tight')
+    plt.savefig(ploc + 'histogram_lat_lon_map_' + source + '.pdf', bbox_inches='tight')
+    plt.show()
+    plt.close()
+
+    # separate colorbar
+    a = np.array([[vmin,vmax]])
+    plt.figure(figsize=(9, 1.5))
+    img = plt.imshow(a, cmap="viridis")
+    plt.gca().set_visible(False)
+    cax = plt.axes([0.1, 0.2, 0.8, 0.6])
+    cbar = plt.colorbar(orientation="horizontal", cax=cax)
+    cbar.ax.tick_params(labelsize=22)
+    plt.savefig(ploc + 'histogram_lat_lon_map_colorbar.png', bbox_inches='tight')
+    plt.savefig(ploc + 'histogram_lat_lon_map_colorbar.pdf', bbox_inches='tight')
+    plt.show()
+    plt.close()
+
+
+

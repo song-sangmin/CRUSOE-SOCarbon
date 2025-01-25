@@ -5,31 +5,37 @@ import pandas                as pd
 
 
 # Southern Oceans SOCAT data
-socatv2024_SO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_DATA.csv')
-socatv2024_SO_INFO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_INFO.csv')
+# socatv2024_SO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_DATA.csv')
+# socatv2024_SO_INFO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_INFO.csv')
 
 
-# %% Time functions
-def datetime2ytd(time, ref_time = '2014-01-01'):
-    """" Return time in YTD format from datetime format."""
-    return (time - np.datetime64(ref_time))/np.timedelta64(1, 'D')
 
-def ytd2datetime(num, ref_time = '2014-01-01'):
-    """" Return datetime format to YTD."""
-    return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
+# socat_3h = pd.read_csv('../data/SOCATv2024_SO_resampled_3h.csv')
 
-def get_ydsines(yearday):
-    """ For adding seasonal variable in Training_RandomForest.ipynb"""
-    if (yearday < 0) & (yearday > -365):
-        yearday = 365+yearday
-    if yearday < -365:
-        yearday = 365*2 + yearday
-    if yearday >= 365:
-        yearday = yearday % 365
-    ydcos = np.cos(2*np.pi*np.array(yearday)/365)
-    ydsin = np.sin(2*np.pi*np.array(yearday)/365)
 
-    return [ydcos, ydsin]
+# # %% Time functions
+# def datetime2ytd(time, ref_time = '2014-01-01'):
+#     """" Return time in YTD format from datetime format."""
+#     return (time - np.datetime64(ref_time))/np.timedelta64(1, 'D')
+
+# def ytd2datetime(num, ref_time = '2014-01-01'):
+#     """" Return datetime format to YTD."""
+#     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
+
+# def get_ydsines(yearday):
+#     """ For adding seasonal variable in Training_RandomForest.ipynb"""
+#     if (yearday < 0) & (yearday > -365):
+#         yearday = 365+yearday
+#     if yearday < -365:
+#         yearday = 365*2 + yearday
+#     if yearday >= 365:
+#         yearday = yearday % 365
+#     ydcos = np.cos(2*np.pi*np.array(yearday)/365)
+#     ydsin = np.sin(2*np.pi*np.array(yearday)/365)
+
+#     return [ydcos, ydsin]
+
+
 
 # %% Data functions from Channing Prend (cprend@uw.edu)
 
