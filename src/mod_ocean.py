@@ -14,12 +14,15 @@ import gsw
 
 
 # %% Time functions
-def datetime2ytd(time, ref_time = '2014-01-01'):
+def datetime2ytd(time, ref_time):
     """" Return time in YTD format from datetime format."""
     return (time - np.datetime64(ref_time))/np.timedelta64(1, 'D')
 
-def ytd2datetime(num, ref_time = '2014-01-01'):
-    """" Return datetime format to YTD."""
+def ytd2datetime(num, ref_time):
+    """" Return datetime format to YTD.
+    @ param num: (int) number of days since ref_time
+      ref_time: (str) reference time in 'YYYY-MM-DD' format
+    """
     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
 
 def get_ydsines(yearday):
@@ -34,6 +37,42 @@ def get_ydsines(yearday):
     ydsin = np.sin(2*np.pi*np.array(yearday)/365)
 
     return [ydcos, ydsin]
+
+# %% Spatial functions (from 0.1_SOCAT)
+
+def did_cross_lon180(df):
+    """ 
+    Returns True if the platform crossed the 180 longitude line,
+    i.e. when the longitude delta is large (> 270 degrees)"""
+    df = df.copy()
+    df.loc[:,'longitude_diff'] = df['longitude'].diff().values
+    return (np.abs(df['longitude_diff']) > 270).any()
+
+
+def get_avg_longitude(df, type='mean'):
+    """ 
+    Function to fix longitude averaging when crossing longitude 180 to -180
+    @param df: dataframe with longitude values
+    @return longitude_avg: (float) average longitude value 
+    """
+    # If any longitude differences are large,
+    # Then add 360 to all the negative values of longitude
+    # This will work even if the ship crosses the -180 bound several times
+    if did_cross_lon180(df):
+        index = df[df['longitude'] < 0].index
+        df.loc[index, 'longitude'] = df.loc[index, 'longitude'] + 360
+
+    if type == 'mean':
+        longitude_avg = df['longitude'].mean()
+    elif type == 'median':
+        longitude_avg = df['longitude'].median()
+
+    # If the average longitude is greater than 180, 
+    # then subtract 360 (full revolution)
+    if longitude_avg > 180:
+        longitude_avg = longitude_avg - 360
+
+    return longitude_avg 
 
 # %% T-S diagrams and binning functions 
 
