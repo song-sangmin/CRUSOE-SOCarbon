@@ -11,7 +11,7 @@ from   datetime              import date, datetime, timedelta                 # 
 import datetime
 import   scipy
 import gsw
-
+from tqdm import tqdm
 
 # %% Time functions
 def datetime2ytd(time, ref_time):
@@ -27,16 +27,27 @@ def ytd2datetime(num, ref_time):
 
 def get_ydsines(yearday):
     """ For adding seasonal variable in Training_RandomForest.ipynb"""
-    if (yearday < 0) & (yearday > -365):
-        yearday = 365+yearday
-    if yearday < -365:
-        yearday = 365*2 + yearday
-    if yearday >= 365:
-        yearday = yearday % 365
+    yearday = yearday%365
     ydcos = np.cos(2*np.pi*np.array(yearday)/365)
     ydsin = np.sin(2*np.pi*np.array(yearday)/365)
 
     return [ydcos, ydsin]
+
+def expand_datetime(data, type='dataframe'):
+    """ Choose "dataframe" or "dataset" type to expand datetime into year, month, day"""
+    out = data.copy()
+    if type == 'dataframe':
+        out['year'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.year)
+        out['month'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.month)
+        out['day'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.day)
+    elif type == 'dataset':
+        out['year'] = data.datetime.dt.year
+        out['month'] = data.datetime.dt.month
+        out['day'] = data.datetime.dt.day
+        out = out.set_coords(['year', 'month', 'day'])
+    return out
+
+
 
 # %% Spatial functions (from 0.1_SOCAT)
 
@@ -73,6 +84,8 @@ def get_avg_longitude(df, type='mean'):
         longitude_avg = longitude_avg - 360
 
     return longitude_avg 
+
+
 
 # %% T-S diagrams and binning functions 
 
