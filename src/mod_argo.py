@@ -327,24 +327,24 @@ def interpolate_float_pressure(argoDF, pres_levels = np.arange(0,1001,5), bgc_li
         for var in var_list:
             try: # if there is valid data for the variable
 
-                # catch any large gaps in the data
-                group['pres_diff'] = np.diff(group.pressure)
-                # group['marker'] = np.tile(np.nan, len(group))
+                # # catch any large gaps in the data
+                # group['pres_diff'] = np.diff(group.pressure)
+                # # group['marker'] = np.tile(np.nan, len(group))
 
-                if group['pres_diff'].any()>200:
-                    subID_index = group[group['pres_diff']>200].index
-                    group.loc[subID_index, 'marker'] = 1
-                    group['continuous_id'] = group['marker'].cumsum().ffill()
+                # if group['pres_diff'].any()>200:
+                #     subID_index = group[group['pres_diff']>200].index
+                #     group.loc[subID_index, 'marker'] = 1
+                #     group['continuous_id'] = group['marker'].cumsum().ffill()
 
-                temp = [] # list of interpolated variables
-                for subid, subgroup in group.groupby('continuous_id'):
-                    subpres_levels = pres_levels[(pres_levels >= subgroup['pressure'].min()) & (pres_levels <= subgroup['pressure'].max())]
-                    f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
-                    temp = f(subpres_levels)
+                # temp = [] # list of interpolated variables
+                # for subid, subgroup in group.groupby('continuous_id'):
+                #     subpres_levels = pres_levels[(pres_levels >= subgroup['pressure'].min()) & (pres_levels <= subgroup['pressure'].max())]
+                #     f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
+                #     temp = f(subpres_levels)
 
-                else: # large gaps
-                    f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
-                    interpolated_variables[var] = f(pres_levels)
+                # else: # large gaps
+                f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
+                interpolated_variables[var] = f(pres_levels)
 
             except: # if no valid data for the variable
                 interpolated_variables[var] = np.tile(np.nan, len(pres_levels))

@@ -178,6 +178,7 @@ def setup_SO_axes(
     fig:                   matplotlib.figure.Figure,
     max_latitude:          float = -35,
     add_gridlines:         bool  = True,
+    add_frontlines:        bool  = True,
     color_land:            bool  = False,
     land_edgecolor:        str   = 'grey',
     land_facecolor:        str   = 'grey',
@@ -283,6 +284,13 @@ def setup_SO_axes(
         ax.add_feature(cfeature.LAND, zorder=1, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
     else:
         ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
+
+    if add_frontlines:
+        ax.add_patch(stf_patch)
+        ax.add_patch(saf_patch)
+        ax.add_patch(pf_patch)
+        ax.add_patch(sacc_patch)
+        ax.add_patch(sie_patch)
 
 ### Make SO plot boundary a circle
 def plot_circle_boundary(ax) -> None:
