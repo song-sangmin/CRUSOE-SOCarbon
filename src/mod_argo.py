@@ -296,9 +296,98 @@ def to_xr_dataset(argoDF, title, source):
 
 # %% Interpolation function
 # =============================================================================
+def interpolate_z_profile(prof, pres_levels, var_list, 
+                          z_gap = 200, ref_time = '2014-01-01') -> pd.DataFrame:
+    """  
+    Function to interpolate single float profile data (pchip) to chosen pressure levels,
+    Does not fit over vertical gaps in the data, with cutoff defined by z_gap. 
+
+    @param      prof: pd DataFrame with profile data
+                pres_levels: list of pressure levels to interpolate to
+                var_list: list of variables to interpolate
+                z_gap: z (m) threshold for large gaps in the data,
+    @return     output: pd DataFrame with interpolated data
+    """
+
+    # If there is data, separate profile out into continuous vertical parts
+    try:
+        # Sort by pressure and drop duplicates
+        prof = prof.reset_index().sort_values(by='pressure')
+        prof = prof.drop_duplicates(subset='pressure', keep="last") 
+
+        prof['pres_diff'] = [np.nan] + np.diff(prof.pressure).tolist()
+        subID_index = prof[prof['pres_diff'] > z_gap].index
+        prof.loc[subID_index, 'marker'] = 1
+        prof['continuous_id'] = prof['marker'].cumsum().ffill().fillna(0).astype(int)
+    except: 
+        # print('no data in profid' + str(prof.profid.iloc[0]))
+        return None
+    
+    # Initialize interpolated DataFrame to return
+    output = pd.DataFrame(index=pres_levels, columns=var_list, dtype=float)
+    output.index.name = 'pressure'
+
+    # If there are no gaps, all points will be assigned to same continuous_id
+    # Fit pchip to each continuous_id
+    for _, subprof in prof.groupby('continuous_id'):
+        xmin = subprof.pressure.min(); xmax = subprof.pressure.max()
+        subpres_levels = [x for x in pres_levels if x > xmin and x < xmax] # valid pres levels
+        if len(subprof) > 1:
+            for var in var_list:
+                f = scipy.interpolate.PchipInterpolator(x=subprof['pressure'], y=subprof[var], extrapolate = False)
+                output.loc[subpres_levels, var] = f(subpres_levels)
+
+    # Reset index, drop nans
+    output = output.reset_index().dropna()
+
+    # Add profid, wmoid, datetime
+    output['profid'] = np.tile(prof.profid.iloc[0], len(output))
+    output['wmoid'] = np.tile(prof.wmoid.iloc[0], len(output))
+    output['datetime'] = pd.to_datetime(myocn.ytd2datetime(output.yearday, ref_time = ref_time))
+    
+    return output
+    
+
+def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), bgc_list = [], 
+                           z_gap = 200, ref_time = '2014-01-01'):
+    ''' 
+    Interpolate variables to a new pressure grid, without extrapolation.
+    
+    Replaces old function 'interpolate_float_pressure' from mod_argo in 0.4_bgcArgo 
+    Adding middle catch for large gaps in the data
+
+
+    @ param  argoDF: dataframe with "profid" as a variable column
+                      can hold profiles from one float, or from multiple floats
+             pres_levels: pressure levels to interpolate to
+             bgc_list: (default) [] empty list for core Argo
+                        ['pH'] or list of bgc variables to interpolate
+    @ return argoDF_regular: dataframe with interpolated variables
+                            can be converted to xr Dataset with .to_xr_dataset()
+    '''
+    # Default variables to interpolate (CT, SA) from core Argo 
+    var_list = ['CT', 'SA', 'sigma0', 'spice', 'temperature', 
+                    'salinity', 'yearday', 'latitude', 'longitude']
+    var_list = var_list + bgc_list
+
+    # Initialize list to hold interpolated DFs, one for each profile
+    profile_interp_list = []
+    for key, profDF in argoDF.groupby('profid'):
+        profile_interp_list.append(interpolate_z_profile(profDF, pres_levels, var_list, 
+                                            z_gap = z_gap,  # avoid interpolating over large gaps 
+                                            ref_time = ref_time))
+
+    # Combine all profiles into one DataFrame
+    argoDF_regular = pd.concat(profile_interp_list) 
+    argoDF_regular = argoDF_regular.set_index(["profid", 'pressure'])
+    # argoDF_regular = argoDF_regular.dropna(subset=['CT', 'SA'])
+
+    return argoDF_regular
+
 
 def interpolate_float_pressure(argoDF, pres_levels = np.arange(0,1001,5), bgc_list = [], ref_time = '2014-01-01'):
     ''' 
+    OUTDATED as of Feb 22 2025, see regrid_pressure_levels()
     Interpolate variables to a new pressure grid, without extrapolation.
 
     @ param  argoDF: dataframe with "profid" as a variable column
