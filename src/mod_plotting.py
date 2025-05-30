@@ -278,6 +278,13 @@ def setup_SO_axes(
         #     txt =  ' {0} '.format(str(int(alat)))+degree_symbol
         #     ax.text(projx1, projy1, txt, va=va, ha=ha, color=longitude_label_color, fontsize=fontsize) 
         
+    if add_frontlines:
+        ax.add_patch(stf_patch)
+        ax.add_patch(saf_patch)
+        ax.add_patch(pf_patch)
+        ax.add_patch(sacc_patch)
+        ax.add_patch(sie_patch)
+
         
     ### Add in coastlines/features
     if color_land:
@@ -285,12 +292,7 @@ def setup_SO_axes(
     else:
         ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
 
-    if add_frontlines:
-        ax.add_patch(stf_patch)
-        ax.add_patch(saf_patch)
-        ax.add_patch(pf_patch)
-        ax.add_patch(sacc_patch)
-        ax.add_patch(sie_patch)
+    
 
 ### Make SO plot boundary a circle
 def plot_circle_boundary(ax) -> None:

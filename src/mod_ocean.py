@@ -41,15 +41,31 @@ def expand_datetime(data, type='dataframe'):
         out['month'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.month)
         out['day'] = data.datetime.astype('datetime64[ns]').map(lambda x: x.day)
     elif type == 'dataset':
-        out['year'] = data.datetime.dt.year
-        out['month'] = data.datetime.dt.month
-        out['day'] = data.datetime.dt.day
+        out['year'] = data.datetime.astype('datetime64[ns]').dt.year
+        out['month'] = data.datetime.astype('datetime64[ns]').dt.month
+        out['day'] = data.datetime.astype('datetime64[ns]').dt.day
         out = out.set_coords(['year', 'month', 'day'])
     return out
 
 
 
 # %% Spatial functions (from 0.1_SOCAT)
+
+# def weighted_distance(lon_arr, lat_arr, Lx, Ly):
+#     """  Used in Diagnostic_SOCAT
+#     @param:
+#         Calculate a distance metric that incorporates ratio of decorrelation scales  
+#                 (zonal Lx, meridional Ly)
+#         lon_arr: [lon1, lon2]
+#         lat_arr: [lat1, lat2]
+#     """
+#     delta_lon = lon_arr[1] - lon_arr[0]  # maximum difference of 180, either direction
+#     if np.abs(delta_lon) > 180:
+#         delta_lon = 360 - np.abs(delta_lon)
+#     delta_lat = lat_arr[1] - lat_arr[0]
+
+#     return np.sqrt( (delta_lon**2 /Lx**2) + (delta_lat**2 / Ly**2) )
+
 
 def did_cross_lon180(df):
     """ 
@@ -85,6 +101,107 @@ def get_avg_longitude(df, type='mean'):
 
     return longitude_avg 
 
+
+# bathy_path = '/Volumes/cremas-repo/data/etopo/gebco_2024_sub_ice_topo/GEBCO_2024_sub_ice_topo.nc'
+def get_bathymetry_DS(plat_index, bathy_nc, dropvars = [], bathy_lim = -1000,
+                   save_path = None, save_tag = '', nc_attrs = {'title': ''}):
+    """ 
+    Find nearest bathymetry value for each float profile. 
+    Return Dataset with open ocean profile index (averaged along pressure). 
+
+    @param 
+        plat_index: dataframe with 'latitude' and 'longitude' columns,
+                index should be 'profid' (should be pre-averaged along pressure)
+                [if not averaged, use `plat_DF.groupby('expoID').first()` during call]
+        drop_vars: variables to drop when making final .nc file
+                  for floats, dropvars = ['temperature_qc', 'salinity_qc', 'pressure_qc', 
+                                         'temp_error', 'psal_error', 'pres_error']
+        bathy_lim: (negative) limit for shallow profiles 
+        bathy_nc : bathymetry Dataset
+        save_path: path to save new dataframe, None by default means no save
+    """
+    print('Masking with bathymetry limit ' + str(bathy_lim))
+    print('* Note long run time for large datasets *')
+
+    # bathy_nc = xr.open_dataset(bathy_path).elevation    
+    # plat_index = plat_df.groupby('profid').first()
+    plat_index['bathymetry'] = bathy_nc.sel(
+            lat=xr.DataArray(plat_index['latitude']), 
+            lon=xr.DataArray(plat_index['longitude']), 
+            method='nearest').values
+    
+    # Make xr Dataset to store profile-averaged core index by year
+    INDEX_DS = (xr.Dataset.from_dataframe(plat_index[plat_index.bathymetry < bathy_lim])
+                                                        .drop_vars(dropvars)
+                                                        .assign_attrs(nc_attrs))
+    if save_path != None:
+        INDEX_DS.to_netcdf(save_path + save_tag + '.nc')
+        print('Saved to ' + save_path + save_tag + '.nc' + '\n')
+
+    return INDEX_DS
+
+
+    # Can mask coreDF_QC by the valid profids after masking
+    # Note you can import the core_open_ocean_INDEX back in to rerun.
+
+    # valid_profids = plat_index[plat_index.bathymetry < -1000].dropna().index
+    valid_profids = list(INDEX_DS.profid.values)
+    masked_platdf = platdf[platdf.profid.isin(valid_profids)]
+
+    dropped = len(plat_index) - len(valid_profids)
+    print('Total profiles in with valid bathymetry: ' + str(len(valid_profids)))
+    print('Dropped ' + str(dropped) + ' shallow profiles \n')
+
+
+    return masked_platdf
+
+
+
+# %% For isopycnal analysis (cross spectra and wavelet)
+
+# %% Basic functions for handling dataframes
+def list_profile_DFs(df):
+    """ 
+    @param df: dataframe with all profiles
+    @return: list of dataframes, each with a unique profile
+    """
+    profids = pd.unique(df.profid)
+    profile_DFs = []
+    for i in range(len(profids)):
+        profile_DFs.append(df[df['profid']==profids[i]].copy())
+    return profile_DFs
+
+
+def get_isopycnal_signal(platDF, ave_isopycnal, var_thresh=0.01, var_list = ['yearday', 'pressure', 'sigma0', 'nitrate', 'spice']):
+    """ 
+    Originally from RandomForest_SG mod_DFproc.py
+
+    @param: prof_list: list of glider DF's, using list_profile_DFs 
+            ave_isopycnal: list of isopycnal values to find in each profile
+            var_thresh: threshold for finding sigma in each profile
+            var_list: which variables to keep track of
+    @return: Dictionary object containing along-isopycnal variables. 
+    """
+    prof_list = list_profile_DFs(platDF)
+    dLine = dict.fromkeys(ave_isopycnal)
+
+    for sig in ave_isopycnal:
+        temp = pd.DataFrame()
+
+        for prof in prof_list:
+            # Find all sigma points that are within that threshold
+            rangeDF = pd.DataFrame() 
+            rangeDF = prof[(prof['sigma0']< (sig+var_thresh)) & (prof['sigma0'] > (sig-var_thresh))].copy()
+
+            # Choose mean of values
+            rowdat = rangeDF[var_list].copy().dropna()
+            rowdat = np.mean(rowdat, axis=0) #nanmean avoided if you drop nans above.
+            temp = pd.concat([temp, rowdat], axis=1)
+            
+        temp = temp.T
+        dLine[sig] = temp
+
+    return dLine
 
 
 # %% T-S diagrams and binning functions 
@@ -192,6 +309,49 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
 
     return arr
 
+# %% Calculated variables
+def add_Pchip_buoyancy(plat_DF):
+    """
+    Calculate buoyancy (actually Nsquared using gsw) 
+    @param      plat_DF: dataframe with profiles 
+                ---> make new variable: profiles (list): list of dataframes, each dataframe is a profile
+    @return     list of dataframes, each dataframe is a profile with a buoyancy column added    
+    
+    Version 09.06.2023
+    """
+    new_DF = pd.DataFrame()
+
+    profids = pd.unique(plat_DF.profid) # list of profile ids
+    profile_DFs = []
+    for i in range(len(profids)):
+        profile_DFs.append(plat_DF[plat_DF['profid'] == profids[i]].copy())
+
+    for profile in profile_DFs:
+        Nsquared, mid_pres = gsw.Nsquared(profile.SA.values, profile.CT.values, 
+                                            profile.pressure.values, profile.lat.values)
+
+        df = pd.DataFrame.from_dict({"Ns": Nsquared, "mp": mid_pres})
+        df = df.dropna()
+
+        if np.isnan(df.mp).all():
+            nans = np.empty(len(profile['P'])); nans[:] = np.NaN
+            profile.loc[:, 'buoyancy'] = nans
+        else:
+            f = scipy.interpolate.PchipInterpolator(x=df.mp, y=df.Ns, extrapolate = False)
+            vertN2 = f(profile["pressure"].values)
+
+            surf = np.where(~np.isnan(profile.SA.values))[0][0]
+            bottom = np.where(~np.isnan(profile.SA.values))[0][-1]
+            vertN2[surf] = vertN2[surf+1]
+            vertN2[bottom] = vertN2[bottom-1]
+            profile.loc[:, 'buoyancy'] = vertN2
+        
+        # Take vert N2 and find the maximum in the profile. 
+        
+        new_DF = pd.concat([new_DF, profile])
+
+    return new_DF
+
 
 # def TS_contours(df, nbins, sminus=0.23, splus=0.2, tminus=1.5, tplus=0.6, type='density'):
 #     """ 
@@ -231,4 +391,67 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
 
 #     return si, ti, gridvals
 
+
+# # %% Interpolation function with gap handling
+# # =============================================================================
+# def custom_interp(x_data, y_data, x_levels, x_fill=25, x_gap = 'dynamic'):
+#     """  
+#     Updated Feb 24 2025
+#     This function is adapted in mod_argo, regrid_pressure_levels(), for use on float data
+#     (Adapting for Hannah, originally from in mod_argo interpolate_z_profile())
+#     Function to interpolate single float profile data (pchip) to chosen pressure levels,
+#     Does not fit over vertical gaps in the data, with cutoff defined by x_gap. 
+
+#     @param      x_data: 1D array of x-values (pressure), length N
+#                 y_data: 1D array of y-values (T, S, NO3, O2, etc), length N
+#                 x_levels: 1D array of pressure levels to interpolate to, length N
+#                 x_fill: (default 25) fill pressures up to surface with uppermost value in profile
+#                         if that value has pressure < 25dbar
+#     @return     output: pd DataFrame with interpolated data
+#     """
+#     # Initialize a dataframe for observed values
+#     # May want to do some exception handling here (pressure sorting, drop duplicates)
+#     prof = pd.DataFrame({'x': x_data, 'y': y_data}).dropna()
+#     prof = prof.sort_values(by='x')
+#     prof = prof.drop_duplicates(subset='x', keep='first')
+#     prof['x_diff'] = [np.nan] + np.diff(prof.pressure).tolist()
+
+#     # Initialize dataFrame to return interpolated values, with x_levels as index
+#     output = pd.DataFrame(index=x_levels, columns=['y_interp'], dtype=float)
+#     output.index.name='x_interp'
+
+#     # ===== GAP FILLING
+#     if x_gap == 'dynamic':
+#         prof['max_allowed_gap'] = ([get_max_gap(x) for x in prof['x'].values])
+#         subID_index = prof[prof['x_diff'] > prof['max_allowed_gap']].index
+#     else: # Static, define own
+#         subID_index = prof[prof['x_diff'] > x_gap].index
+
+#     prof.loc[subID_index, 'marker'] = 1
+#     prof['continuous_id'] = prof['marker'].cumsum().ffill().fillna(0).astype(int)
+
+#     # If there are no gaps, all points will be assigned to same continuous_id
+#     # Fit pchip to each continuous_id 
+#     for _, subprof in prof.groupby('continuous_id'):
+#         xmin = subprof['x'].min(); xmax = subprof['x'].max()
+#         subx_levels = [x for x in x_levels if x > xmin and x < xmax] # valid pres levels
+#         if len(subprof) > 1: # If there is more than 1 point to fit pchip over
+#             f = scipy.interpolate.PchipInterpolator(x=subprof['x'], y=subprof['y'], extrapolate = False)
+#             output.loc[subx_levels, 'y_interp'] = f(subx_levels)
+
+#     # ==== HANDLE SURFACE GAPS 
+#     # Note that by default, pchip without extrapolation will fill surface values < minimum
+#     # Fill surface with the nearest neighbor if the first observed value is below x_fill = 25
+#     first_obs = prof.iloc[0]
+#     if first_obs['x'] < x_fill:
+#         # Decide here if you want to fill with first interpolated value, or first observed value
+#         # fill_value = output.dropna().iloc[0].y_interp
+#         fill_value = prof.iloc[0].y
+        
+#         # Determine surface index values to fill
+#         fill_index = [x for x in output.index if x < first_obs.x]
+#         output.loc[fill_index, 'y_interp'] = np.tile(fill_value, len(fill_index))
+
+        
+#     return output.y_interp.values
 

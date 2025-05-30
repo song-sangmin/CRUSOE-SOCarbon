@@ -72,49 +72,6 @@ def print_float_bounds(argo_DF):
 # %% Functions to process Argo data (use with Argopy)
 # =============================================================================
 
-# Might eventually turn all this into one call
-# def import_argopy_data(yrlist = None, save=False, save_path = '../data/202501-ArgoGDAC/'):
-#     # MAIN METHOD, CORE FLOATS: Running for multiple years 
-#     datetag = datetime.datetime.now().strftime("%Y%m%d")
-
-#     if yrlist == None:
-#         yrlist = [str(x) for x in range(2014, 2024)] #2014 through 2023
-
-#     for yrtag in yrlist:
-#         savetag = yrtag + '_core'
-#         print('processing ' + savetag)
-
-#         # Format: [lon_min, lon_max, lat_min, lat_max, pres_min, pres_max, datim_min, datim_max]
-#         BOX = [-180, 180, -90, -35, 0, 2000, yrtag + '-01-01', yrtag + '-12-31']
-
-#         # Construct fetchers for core floats first
-#         # Expert mode returns all QC flags
-#         # Updated Feb 4 2025, use local copy of GDAC (Snapshot 01-09)
-#         fetcher = DataFetcher(ds='phy', mode='expert', params='all',
-#                         parallel=True, progress=True,
-#                         chunks_maxsize={'time': 30},
-#                     )
-#         core_fetcher = fetcher.region(BOX).load()
-
-#         # Returns xr Dataset with point observations as dimension
-#         core_profiles = core_fetcher.data.argo.point2profile();
-#         core_profiles = core_profiles.assign_attrs(raw_attrs = '', Fetched_uri='') # simplify for save
-#         # Store index and domain
-#         core_index = core_fetcher.index
-#         core_domain = core_fetcher.domain 
-
-#         if save:
-#             core_profiles.to_netcdf(save_path + '202501snap_yr' + savetag + '_profiles_' + datetag + '.nc')
-#             core_index.to_csv(save_path + '202501snap_yr' + savetag + '_index_' + datetag + '.csv')
-#             print('Saved data to netcdf and csv')
-#             print(save_path + '202501snap_yr' + savetag + '_profiles_' + datetag + '.nc')
-        
-#     return
-
-
-
-
-
 # Main method
 def process_argo_float(float_df, bgc_list = ['pH'], ref_time = '2014-01-01'):
     """
@@ -280,94 +237,142 @@ def filter_qc_flags(float_df, qc_vars = 'all', use_flags=['1', '2', '5', '8']):
         return float_qc
         
 
-def to_xr_dataset(argoDF, title, source):
+def to_xr_dataset(argoDF, nc_attrs={'date':str(datetime.datetime.now())}):
     """ 
     Convert float Dataframe to Dataset, and assign title and source attributes.
     """
     temp = xr.Dataset.from_dataframe(argoDF)
-    argo_INDEX = temp.mean(dim='pressure')
+    # argo_INDEX = temp.mean(dim='pressure')
 
     argo_DS = temp.set_coords([ 'wmoid', 'datetime', 'yearday', 'latitude', 'longitude'])
-    argo_DS = argo_DS.assign_attrs({'title':title, 'source': source, 'date':str(datetime.datetime.now())})
+    argo_DS = argo_DS.assign_attrs(nc_attrs)
 
-    return argo_DS, argo_INDEX
+    return argo_DS
     
 
 
-# %% Interpolation function
+# %% Interpolation functions
 # =============================================================================
+def get_max_gap(x_val):
+    """
+    Return the maximum allowed gap based on the value of x.
+    """
+    if x_val < 100:
+        return 25
+    elif x_val < 500:
+        return 50
+    elif x_val < 1000:
+        return 100
+    else:
+        return 250
+    
+
 def interpolate_z_profile(prof, pres_levels, var_list, 
-                          z_gap = 200, ref_time = '2014-01-01') -> pd.DataFrame:
+                          z_gap = 200, surface_fill = 0,
+                          ref_time = '2014-01-01') -> pd.DataFrame:
     """  
     Function to interpolate single float profile data (pchip) to chosen pressure levels,
     Does not fit over vertical gaps in the data, with cutoff defined by z_gap. 
 
-    @param      prof: pd DataFrame with profile data
+    @param      prof: pd DataFrame with data from a single profile
                 pres_levels: list of pressure levels to interpolate to
                 var_list: list of variables to interpolate
-                z_gap: z (m) threshold for large gaps in the data,
+                z_gap: z (m) threshold for large gaps in the data, can define own dbar
+                    or use 'dynamic' to use get_max_gap() function
+                surface_fill: (dbar) pressure above which to fill surface values with nearest neighbor,
+                                 if first observed value is shallower than surface_fill
     @return     output: pd DataFrame with interpolated data
     """
 
     # If there is data, separate profile out into continuous vertical parts
+    # Useful catch when iterating over a lot of profiles using regrid_pressure_levels() 
     try:
         # Sort by pressure and drop duplicates
         prof = prof.reset_index().sort_values(by='pressure')
         prof = prof.drop_duplicates(subset='pressure', keep="last") 
-
         prof['pres_diff'] = [np.nan] + np.diff(prof.pressure).tolist()
-        subID_index = prof[prof['pres_diff'] > z_gap].index
+
+        # Dynamic gap filling
+        if z_gap == 'dynamic':
+            prof['max_allowed_gap'] = ([get_max_gap(x) for x in prof['pressure'].values])
+            subID_index = prof[prof['pres_diff'] > prof['max_allowed_gap']].index
+        else: # Static, define own
+            subID_index = prof[prof['pres_diff'] > z_gap].index
+
+        # print(subID_index)
+        # Separate out continuous ID's
         prof.loc[subID_index, 'marker'] = 1
         prof['continuous_id'] = prof['marker'].cumsum().ffill().fillna(0).astype(int)
     except: 
         # print('no data in profid' + str(prof.profid.iloc[0]))
         return None
     
-    # Initialize interpolated DataFrame to return
+    # Initialize interpolated DataFrame to return, with pressure as index
     output = pd.DataFrame(index=pres_levels, columns=var_list, dtype=float)
     output.index.name = 'pressure'
 
     # If there are no gaps, all points will be assigned to same continuous_id
-    # Fit pchip to each continuous_id
+    # Fit pchip to each continuous_id 
     for _, subprof in prof.groupby('continuous_id'):
         xmin = subprof.pressure.min(); xmax = subprof.pressure.max()
         subpres_levels = [x for x in pres_levels if x > xmin and x < xmax] # valid pres levels
-        if len(subprof) > 1:
+        if len(subprof) > 1: # If there is more than 1 point to fit pchip over
             for var in var_list:
+                subprof = subprof.dropna(subset=[var]) # y must have finite values
                 f = scipy.interpolate.PchipInterpolator(x=subprof['pressure'], y=subprof[var], extrapolate = False)
                 output.loc[subpres_levels, var] = f(subpres_levels)
 
-    # Reset index, drop nans
-    output = output.reset_index().dropna()
+    if surface_fill > 0:
+        # # ==== HANDLE SURFACE GAPS 
+        # Fill surface with the nearest neighbor if the first observed value is below x_fill = 25
+        first_obs = prof.iloc[0]
+        if first_obs['pressure'] < surface_fill:
+            for var in var_list:
+                # Decide here if you want to fill with first interpolated value, or first observed value
+                # fill_value = output.dropna().iloc[0].y_interp # first interp
+                fill_value = prof.iloc[0][var] # first observed
+
+                fill_index = [x for x in output.index if x < first_obs.pressure]
+                output.loc[fill_index, var] = np.tile(fill_value, len(fill_index))
+
+    # Reset index, drop nans (needed before datetime calculation)
+    output = output.reset_index().dropna() 
 
     # Add profid, wmoid, datetime
     output['profid'] = np.tile(prof.profid.iloc[0], len(output))
     output['wmoid'] = np.tile(prof.wmoid.iloc[0], len(output))
-    output['datetime'] = pd.to_datetime(myocn.ytd2datetime(output.yearday, ref_time = ref_time))
+    
+    if 'yearday' in var_list:
+        output['datetime'] = pd.to_datetime(myocn.ytd2datetime(output.yearday, ref_time = ref_time))
     
     return output
     
 
-def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), bgc_list = [], 
-                           z_gap = 200, ref_time = '2014-01-01'):
+def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), var_list = 'all', bgc_list = [], 
+                           z_gap = 200, surface_fill =0, ref_time = '2014-01-01'):
     ''' 
     Interpolate variables to a new pressure grid, without extrapolation.
     
     Replaces old function 'interpolate_float_pressure' from mod_argo in 0.4_bgcArgo 
     Adding middle catch for large gaps in the data
 
-
     @ param  argoDF: dataframe with "profid" as a variable column
                       can hold profiles from one float, or from multiple floats
              pres_levels: pressure levels to interpolate to
              bgc_list: (default) [] empty list for core Argo
                         ['pH'] or list of bgc variables to interpolate
+                z_gap: z (m) threshold for large gaps in the data, can define own dbar
+                        Set as very large value if you want to interpolate smoothly over gaps
+                surface_fill: fill surface with nearest neighbor if first observed value is below x_fill
+                            see interpolate_z_profile() for details
+                ref_time: reference time for yearday calculation
     @ return argoDF_regular: dataframe with interpolated variables
                             can be converted to xr Dataset with .to_xr_dataset()
     '''
     # Default variables to interpolate (CT, SA) from core Argo 
-    var_list = ['CT', 'SA', 'sigma0', 'spice', 'temperature', 
-                    'salinity', 'yearday', 'latitude', 'longitude']
+    if var_list == 'all':
+        var_list = ['CT', 'SA', 'sigma0', 'spice', 'temperature', 
+                        'salinity', 'yearday', 'latitude', 'longitude']
     var_list = var_list + bgc_list
 
     # Initialize list to hold interpolated DFs, one for each profile
@@ -375,6 +380,7 @@ def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), bgc_list =
     for key, profDF in argoDF.groupby('profid'):
         profile_interp_list.append(interpolate_z_profile(profDF, pres_levels, var_list, 
                                             z_gap = z_gap,  # avoid interpolating over large gaps 
+                                            surface_fill = surface_fill,
                                             ref_time = ref_time))
 
     # Combine all profiles into one DataFrame
@@ -385,76 +391,76 @@ def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), bgc_list =
     return argoDF_regular
 
 
-def interpolate_float_pressure(argoDF, pres_levels = np.arange(0,1001,5), bgc_list = [], ref_time = '2014-01-01'):
-    ''' 
-    OUTDATED as of Feb 22 2025, see regrid_pressure_levels()
-    Interpolate variables to a new pressure grid, without extrapolation.
+# def interpolate_float_pressure(argoDF, pres_levels = np.arange(0,1001,5), bgc_list = [], ref_time = '2014-01-01'):
+#     ''' 
+#     OUTDATED as of Feb 22 2025, see regrid_pressure_levels()
+#     Interpolate variables to a new pressure grid, without extrapolation.
 
-    @ param  argoDF: dataframe with "profid" as a variable column
-                      can hold profiles from one float, or from multiple floats
-             pres_levels: (regular) pressure levels to interpolate to
-             bgc_list: (default) [] empty list for core Argo
-                        ['pH'] or list of bgc variables to interpolate
-    @ return argoDF_regular: dataframe with interpolated variables
-                            can be converted to xr Dataset with .to_xr_dataset()
-    '''
-    # Default variables to interpolate (CT, SA) from core Argo 
-    var_list = ['CT', 'SA', 'sigma0', 'spice', 'temperature', 
-                    'salinity', 'yearday', 'latitude', 'longitude']
-    var_list = var_list + bgc_list
+#     @ param  argoDF: dataframe with "profid" as a variable column
+#                       can hold profiles from one float, or from multiple floats
+#              pres_levels: (regular) pressure levels to interpolate to
+#              bgc_list: (default) [] empty list for core Argo
+#                         ['pH'] or list of bgc variables to interpolate
+#     @ return argoDF_regular: dataframe with interpolated variables
+#                             can be converted to xr Dataset with .to_xr_dataset()
+#     '''
+#     # Default variables to interpolate (CT, SA) from core Argo 
+#     var_list = ['CT', 'SA', 'sigma0', 'spice', 'temperature', 
+#                     'salinity', 'yearday', 'latitude', 'longitude']
+#     var_list = var_list + bgc_list
 
-    # # Initialize a list to hold interpolated DFs, one for each profile
-    profile_interp_list = []
+#     # # Initialize a list to hold interpolated DFs, one for each profile
+#     profile_interp_list = []
 
-    # For each profile, interpolate variables and store in a dictionary
-    interpolated_variables = {k:None for k in var_list} # For each 
-    for profid, group in argoDF.groupby('profid'):
+#     # For each profile, interpolate variables and store in a dictionary
+#     interpolated_variables = {k:None for k in var_list} # For each 
+#     for profid, group in argoDF.groupby('profid'):
         
-        # print('Processing profile:', profid)
-        group = group.dropna(subset=['CT']).sort_values(by='pressure').reset_index()
-        group = group.drop_duplicates(subset='pressure', keep="last") # why are there pressure duplicates? 
-        for var in var_list:
-            try: # if there is valid data for the variable
+#         # print('Processing profile:', profid)
+#         group = group.dropna(subset=['CT']).sort_values(by='pressure').reset_index()
+#         group = group.drop_duplicates(subset='pressure', keep="last") # why are there pressure duplicates? 
+#         for var in var_list:
+#             try: # if there is valid data for the variable
 
-                # # catch any large gaps in the data
-                # group['pres_diff'] = np.diff(group.pressure)
-                # # group['marker'] = np.tile(np.nan, len(group))
+#                 # # catch any large gaps in the data
+#                 # group['pres_diff'] = np.diff(group.pressure)
+#                 # # group['marker'] = np.tile(np.nan, len(group))
 
-                # if group['pres_diff'].any()>200:
-                #     subID_index = group[group['pres_diff']>200].index
-                #     group.loc[subID_index, 'marker'] = 1
-                #     group['continuous_id'] = group['marker'].cumsum().ffill()
+#                 # if group['pres_diff'].any()>200:
+#                 #     subID_index = group[group['pres_diff']>200].index
+#                 #     group.loc[subID_index, 'marker'] = 1
+#                 #     group['continuous_id'] = group['marker'].cumsum().ffill()
 
-                # temp = [] # list of interpolated variables
-                # for subid, subgroup in group.groupby('continuous_id'):
-                #     subpres_levels = pres_levels[(pres_levels >= subgroup['pressure'].min()) & (pres_levels <= subgroup['pressure'].max())]
-                #     f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
-                #     temp = f(subpres_levels)
+#                 # temp = [] # list of interpolated variables
+#                 # for subid, subgroup in group.groupby('continuous_id'):
+#                 #     subpres_levels = pres_levels[(pres_levels >= subgroup['pressure'].min()) & (pres_levels <= subgroup['pressure'].max())]
+#                 #     f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
+#                 #     temp = f(subpres_levels)
 
-                # else: # large gaps
-                f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
-                interpolated_variables[var] = f(pres_levels)
+#                 # else: # large gaps
+#                 f = scipy.interpolate.PchipInterpolator(x=group['pressure'], y=group[var], extrapolate = False)
+#                 interpolated_variables[var] = f(pres_levels)
 
-            except: # if no valid data for the variable
-                interpolated_variables[var] = np.tile(np.nan, len(pres_levels))
+#             except: # if no valid data for the variable
+#                 interpolated_variables[var] = np.tile(np.nan, len(pres_levels))
         
-        # Combine profile information into one DF and add to list
-        # prof_interp = pd.DataFrame({var: interpolated_variables[var] for var in var_list})
-        prof_interp = pd.DataFrame(interpolated_variables)
-        prof_interp['profid'] = profid
-        prof_interp['wmoid'] = group['wmoid'] #.values[0]
-        prof_interp['pressure'] = pres_levels
+#         # Combine profile information into one DF and add to list
+#         # prof_interp = pd.DataFrame({var: interpolated_variables[var] for var in var_list})
+#         prof_interp = pd.DataFrame(interpolated_variables)
+#         prof_interp['profid'] = profid
+#         prof_interp['wmoid'] = group['wmoid'] #.values[0]
+#         prof_interp['pressure'] = pres_levels
 
-        profile_interp_list.append(prof_interp)
+#         profile_interp_list.append(prof_interp)
 
-    argoDF_regular = pd.concat(profile_interp_list).dropna(subset=['CT', 'SA'])
-    argoDF_regular = argoDF_regular.set_index(["profid", 'pressure'])
-    argoDF_regular['datetime'] = pd.to_datetime(myocn.ytd2datetime(argoDF_regular['yearday'], ref_time = ref_time))
+#     argoDF_regular = pd.concat(profile_interp_list).dropna(subset=['CT', 'SA'])
+#     argoDF_regular = argoDF_regular.set_index(["profid", 'pressure'])
+#     argoDF_regular['datetime'] = pd.to_datetime(myocn.ytd2datetime(argoDF_regular['yearday'], ref_time = ref_time))
 
-    # Make sure there are values for CT, SA
-    argoDF_regular = argoDF_regular.dropna(subset=['CT', 'SA'])
+#     # Make sure there are values for CT, SA
+#     argoDF_regular = argoDF_regular.dropna(subset=['CT', 'SA'])
 
-    return argoDF_regular
+#     return argoDF_regular
 
 
 # Co-location of other data to nearest argo float 
@@ -533,22 +539,22 @@ depth_range = (zmin, zmax)
 
 
 
-def plot_profiles_from_WMO(floatDF, var = 'CT', ax=None, dotsize=2, ylims=[1600,0]):
+def plot_profiles_from_WMO(floatDF, var = 'CT', ax=None, dotsize=2, ylims=[1000,0]):
     """  
     See a selection of profiles as fxn of depth. 
     @param: floatDF: dataframe, either with 'profid' column (multiple profiles) 
                     or representing a single profile
     """
     if ax == None:
-        fig = plt.figure(figsize=(6, 8))
+        fig = plt.figure(figsize=(5, 8))
         ax = fig.gca()
 
     floatDF = floatDF.reset_index()
     if 'profid' in floatDF.columns: # If floatDF has multiple profiles
         for name, group in floatDF.groupby('profid'):
-            ax.scatter(group[var], group['pressure'], label=name, s=dotsize, marker='.', alpha=0.3, zorder=3)
+            ax.scatter(group[var], group['pressure'], label=name, s=dotsize, marker='o', alpha=0.5, zorder=3)
     else: # If you indexed by profid (e.g. floatDF.loc['5906030_id010'])
-        ax.scatter(floatDF[var], floatDF['pressure'], s=dotsize, marker='.', alpha=0.3, zorder=3)
+        ax.scatter(floatDF[var], floatDF['pressure'], s=dotsize, marker='o', alpha=0.5, zorder=3)
 
     ax.invert_yaxis()
     ax.set_ylim(ylims)

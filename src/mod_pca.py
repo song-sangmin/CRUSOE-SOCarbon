@@ -8,110 +8,125 @@ from   sklearn               import preprocessing
 from   sklearn.decomposition import PCA
 from   sklearn.decomposition import KernelPCA
 from   sklearn               import manifold
-from   xgcm                  import Grid
+# from   xgcm                  import Grid
 
 
 
 # %% Preprocessing steps 
-def scale_byPressure(argoDS, vars_list= ['CT', 'SA']) -> xr.Dataset:
+def center_byPressure(argoDS, vars_list= ['CT', 'SA'], with_scaling = False) -> xr.Dataset:
     """ 
-    Scale variables before PCA to have mean=0 and std=1 grouped by pressure
+    Center and optionally scale variables before PCA to have mean=0 (and std=1) grouped by pressure
     (means/std calculated separately for each pressure level) 
     @param: argoDS: xr dataset with dimensions of profile, pressure
                      data vars should already include CT, SA
-            vars_list: list of variables to scale
-    @return: Dataset with scaled variables, same dims/coords as argoDS
+            vars_list: list of variables to center/scale
+            with_scaling: True if variables should be scaled to std=1, False if only centered
+    @return: Dataset with centered/scaled variables, same dims/coords as argoDS
     """
-    scaled_vars = [] # List of scaled Datasets, one for each variable in vars_list
+    centered_vars = [] # List of centered Datasets, one for each variable in vars_list
 
     for var in vars_list: 
-        # Initialize list of scaled DataArrays (single variable), one for each pressure level
-        scaled_byPressure = [] 
+        # Initialize list of centered DataArrays (single variable), one for each pressure level
+        centered_byPressure = [] 
         for key, group in argoDS.groupby('pressure'): # This removes the pressure dimension
-            arr = xr.DataArray(preprocessing.scale(group[var], with_mean=True, with_std=True), 
-                                        dims=group.dims, coords=group.coords)
-            # Add scaled DataArray to list, and make pressure a dimension again
-            scaled_byPressure.append(arr.expand_dims('pressure'))
+            arr = xr.DataArray(preprocessing.scale(group[var], with_mean=True, 
+                                                   with_std = with_scaling),  # Scaling optional here
+                                dims=group.dims, coords=group.coords)
+            # Add centered DataArray to list, and make pressure a dimension again
+            centered_byPressure.append(arr.expand_dims('pressure'))
 
         # Combine into Dataset representing one variable with "profid", "pressure" as dimensions
-        scaled_vars.append(xr.concat(scaled_byPressure, dim='pressure').rename(var))
+        centered_vars.append(xr.concat(centered_byPressure, dim='pressure').rename(var))
 
-    # Combine all scaled variables into one Dataset
-    scaled_DS = xr.merge(scaled_vars)
+    # Combine all centered variables into one Dataset
+    centered_DS = xr.merge(centered_vars)
 
-    return scaled_DS
+    centered_DS = centered_DS.assign_attrs(argoDS.attrs)
+    # centered_DS = centered_DS.assign_attrs({'processing': 'centered by pressure to have mean=0 and std=1 for each pressure level'})
+
+    return centered_DS
+
+
+
 
 
 # %% Fit the PCA model 
 
 
-def train_pca(argoDS, vars_list = ['CT', 'SA'], n_components = 3, train_frac=0.333):
-    """ """
 
-    Xscaled = scale_byPressure(argoDS, vars_list = vars_list)
+#####################################################################
+# Utilities for model selection (e.g. BIC, AIC)
+#####################################################################
 
+# import modules
+from sklearn import mixture
+import numpy as np
+import random
 
+#####################################################################
+# Calculate BIC and AIC
+#####################################################################
+def calc_bic_and_aic(Xpca, max_N, max_iter=20):
+# calc_bic_and_aic(Xpca, max_N, max_iter=20)
+# returns bic_mean, bic_std, aic_mean, aic_std
 
+    # start message
+    print('bic_and_aic.calc_bic_and_aic')
+    print('--- this may take some time ---')
 
-# def fit_and_apply_pca(profiles, variables_to_include, number_of_pca_components=3, kernel=False, train_frac=0.33, method='onZ'):
-#     """ 
-#     Originally from Dani Jones
-#     Feb 2025 - Modified by @song-sangmin
-#     """
+    # initialize, declare variables
+    bic_scores = np.zeros((2,max_iter))
+    aic_scores = np.zeros((2,max_iter))
 
-#     Xscaled = scale_byPressure(profiles, variables_to_include)
+    # loop through the maximum number of classes, estimate BIC
+    n_components_range = range(2, max_N)
+    iter_range = range(0,max_iter)
 
-#     # create PCA object
-#     if kernel==True:
-#         # KernelPCA approach (crashses due to memory)
-#         print('load_and_preprocess: apply KernelPCA')
-#         pca = KernelPCA(n_components=number_of_pca_components,
-#                         kernel='linear', fit_inverse_transform=True, gamma=10)
-#     else:
-#         pca = PCA(number_of_pca_components)
+    # iterate through all the covariance types (just 'full' for now)
+    cv_types = ['full']
 
-#     # random sample for training
-#     pf           = profiles.profile
-#     rsample_size = np.min((int(train_frac*pf.size),int(pf.size)))
-#     rows_id      = random.sample(range(0,pf.size), rsample_size)
-#     Xtrain       = Xscaled[rows_id,:]
+    # loop through cv_types, components, and iterations
+    for cv_type in cv_types:
+        # iterate over all the possible numbers of components
+        for n_components in n_components_range:
+            bic_one = []
+            aic_one = []
+            # repeat the BIC step for better statistics
+            for bic_iter in iter_range:
+                # select a new random subset
+                rows_id = random.sample(range(0,Xpca.shape[0]-1), 1000)
+                Xpca_for_BIC = Xpca[rows_id,:]
+                # fit a Gaussian mixture model
+                gmm = mixture.GaussianMixture(n_components=n_components,
+                                              covariance_type=cv_type,
+                                              random_state=42)
 
-#     # fit PCA model using training dataset
-#     print('Fitting PCA')
-#     pca.fit(Xtrain)
+                # uncomment for 'rapid' BIC fitting
+                gmm.fit(Xpca_for_BIC)
 
-#     # transform entire input dataset into PCA representation
-#     Xpca = pca.transform(Xscaled)
+                # append this BIC score to the list
+                bic_one.append(gmm.bic(Xpca_for_BIC))
+                aic_one.append(gmm.aic(Xpca_for_BIC))
+                Xpca_for_BIC = []
+                Xpca_for_AIC = []
 
-#     # calculated total variance explained
-#     if kernel==False:
-#         total_variance_explained_ = np.sum(pca.explained_variance_ratio_)
-#         print(total_variance_explained_)
+            # stack the bic scores into a single 2D structure
+            bic_scores = np.vstack((bic_scores, np.asarray(bic_one)))
+            aic_scores = np.vstack((aic_scores, np.asarray(aic_one)))
 
-#     return pca, Xpca
+    # the first two rows are not needed; they were only placeholders
+    bic_scores = bic_scores[2:,:]
+    aic_scores = aic_scores[2:,:]
 
+    # mean values for BIC and AIC
+    bic_mean = np.mean(bic_scores, axis=1)
+    aic_mean = np.mean(aic_scores, axis=1)
 
-# def apply_pca(profiles, pca, method='onZ'):
-#     """ 
-#     Originally from Hannah Joy-Warren 
-#     Feb 2025 - Modified by @song-sangmin
-#     """
+    # standard deviation for BIC and AIC
+    bic_std = np.std(bic_scores, axis=1)
+    aic_std = np.std(aic_scores, axis=1)
 
-#     # start message
-#     print('load_and_preprocess.apply_pca')
-
-#     # concatenate
-#     Xraw, Xscaled = apply_scaling(profiles, method=method)
-
-#     # transform
-#     Xpca = pca.transform(Xscaled)
-
-#     # calculated total variance explained
-#     total_variance_explained_ = np.sum(pca.explained_variance_ratio_)
-#     print(total_variance_explained_)
-
-#     return Xpca
-
+    return bic_mean, bic_std, aic_mean, aic_std
 
 
 
