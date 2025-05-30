@@ -59,7 +59,7 @@ def my_params(size=12, font_family='Futura', title_size = 14):
 
 
 
-# %% Import data for fronts
+# %% Import data for fronts ======================================
 
 import shapefile
 so_fronts = shapefile.Reader('./shapefiles/fronts/so_fronts.shp') 
@@ -100,11 +100,13 @@ latitude_label_color:  str   = 'grey'
 
 
 
-# %% Set up units
+# %% Set up units  ======================================
+
 umol_unit = (r'$\mathbf{[\mu} \mathregular{mol~kg} \mathbf{^{-1}]}$')
 # umol_unit = (r'$[\mu \mathregular{mol~kg^{-1}}]$')
 eke_unit = (r'$\mathbf{[m^2~s^{-2}]}$')
 umol_unit_squared = (r'$\mathbf{[\mu} \mathregular{mol^2~kg} \mathbf{^{-2}]}$')
+degree_symbol = u'\u00B0'
 
 sigma_unit = (r'$\mathbf{\sigma_0}$ ' + '[kg' + r'$\mathbf{~m^{-3}]}$')
 # spice_unit = (r'$ \mathbf{\tau} $ ' + '$\mathbf{[m^{-3}~}$' + 'kg]') #dimensionless
@@ -112,6 +114,9 @@ backscatter_unit = ('log([m'  + r'$ \mathbf{^{-1}} $' + '])')
 par_unit = ('[W m' + r'$ \mathbf{^{-1}} $' + ']')
 hb_unit = ('[s' + r'$ \mathregular{^{-2}} $' + ']')
 fsle_unit =  ('[days ' + r'$\mathbf{^{-1}}$' + ']')
+sa_unit = ('S$_\mathregular_A}$ [g kg ' + r'$\mathbf{^{-1}}$' + ']')
+ct_unit = (r'$ \mathbf{\Theta} $' + ' [' + degree_symbol + ' C]')
+
 
 delta_title = (r'$\mathbf{\Delta }\mathregular{N_{ML}}$ ')
 overline_title = (r'$\overline{\mathregular{N}} \mathregular{_{ML}}$ ')
@@ -122,7 +127,7 @@ hb_title = ('|' + r'$\mathbf{\nabla_h}\mathregular{b}$' + '|')
 
 # %% Functions
 
-# %% T-S Diagrams
+# %% T-S Diagrams  ======================================
 
 def setup_TS_contours(df, ax=None, contour_font_size=12):
     """  
@@ -166,13 +171,14 @@ def setup_TS_contours(df, ax=None, contour_font_size=12):
     return ax
 
 
-# %%  Set up Southern Ocean Map  
+# %%  Set up Southern Ocean Map   ======================================
 
 def setup_SO_axes(
     ax:                    matplotlib.axes.Axes,
     fig:                   matplotlib.figure.Figure,
     max_latitude:          float = -35,
     add_gridlines:         bool  = True,
+    add_frontlines:        bool  = True,
     color_land:            bool  = False,
     land_edgecolor:        str   = 'grey',
     land_facecolor:        str   = 'grey',
@@ -272,12 +278,21 @@ def setup_SO_axes(
         #     txt =  ' {0} '.format(str(int(alat)))+degree_symbol
         #     ax.text(projx1, projy1, txt, va=va, ha=ha, color=longitude_label_color, fontsize=fontsize) 
         
+    if add_frontlines:
+        ax.add_patch(stf_patch)
+        ax.add_patch(saf_patch)
+        ax.add_patch(pf_patch)
+        ax.add_patch(sacc_patch)
+        ax.add_patch(sie_patch)
+
         
     ### Add in coastlines/features
     if color_land:
         ax.add_feature(cfeature.LAND, zorder=1, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
     else:
         ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
+
+    
 
 ### Make SO plot boundary a circle
 def plot_circle_boundary(ax) -> None:
@@ -363,66 +378,49 @@ def plot_histogram_of_profile_locations(ploc, profiles, lon_range, lat_range,
                                         bathy_fname="bathy.nc",
                                         lev_range=range(-6000,1,500),
                                         myPlotLevels=30, vmin=0, vmax=200):
-#
-# source : may be 'argo', 'ctd', 'seal', or 'all'
-# binsize : size of  lat-lon bins in degrees
-#
+## Histogram of profile logations
 
-    # print
-    print("plot_tools.plot_histogram_of_profile_locations")
+# argo_ave = argodat_DS.mean(dim='pressure')
+    # binsize=2
+    # lev_range=range(-6000,1,500)
+    # myPlotLevels=30
+    # vmin=0
+    # vmax=100
 
-    # select
-    if source=='all':
-        df = profiles
-    else:
-        df = profiles.where(profiles.source==source, drop=True)
-
-    # bins
     lon_bins = np.arange(lon_range[0], lon_range[1], binsize)
     lat_bins = np.arange(lat_range[0], lat_range[1], binsize)
-
     # histogram
-    hLatLon = histogram(df.longitude, df.latitude, bins=[lon_bins, lat_bins])
 
-    # load bathymetry
-    bds = io.load_bathymetry(bathy_fname)
-    bathy_lon = bds['longitude'][:]
-    bathy_lat = bds['latitude'][:]
-    bathy = bds['bathy'][:]
 
-    #
-    #-- original attempt
-    #
-
-    # cartopy plot
-    plt.figure(figsize=(17, 13))
+    plt.figure(figsize=(20, 13))
     ax = plt.axes(projection=ccrs.PlateCarree())
     ax.set_extent([lon_range[0], lon_range[1], lat_range[0], lat_range[1]],
                     ccrs.PlateCarree())
+
     # colormesh histogram
-    CS = plt.pcolormesh(lon_bins, lat_bins, hLatLon.T, transform=ccrs.PlateCarree())
-    plt.clim(vmin, vmax)
+
+    ### using numpy.histogram2d
+    bin_values,_,__ = np.histogram2d(argo_ave.longitude.values,argo_ave.latitude.values,bins=(lon_bins, lat_bins) )
+    X, Y = np.meshgrid(lon_bins, lat_bins)
+
+    ax.hist2d(argo_ave.longitude.values,argo_ave.latitude.values,bins=(lon_bins, lat_bins), vmax=vmax, cmap=cmo.amp)
+
+
     ax.coastlines(resolution='50m',color='white')
     ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                 linewidth=2, color='gray', alpha=0.5, linestyle='--')
-    ax.add_feature(cartopy.feature.LAND)
-    plt.savefig(ploc + 'histogram_lat_lon_map_' + source + '.png', bbox_inches='tight')
-    plt.savefig(ploc + 'histogram_lat_lon_map_' + source + '.pdf', bbox_inches='tight')
-    plt.show()
-    plt.close()
+                    linewidth=1, color='gray', alpha=0.6, linestyle='--')
+    # ax.add_feature(cartopy.feature.LAND)
+
+    ax.add_feature(cfeature.LAND, zorder=16, linewidth = coast_linewidth, edgecolor = land_edgecolor, facecolor = land_facecolor)
 
     # separate colorbar
     a = np.array([[vmin,vmax]])
     plt.figure(figsize=(9, 1.5))
-    img = plt.imshow(a, cmap="viridis")
+    img = plt.imshow(a, cmap=cmo.amp)
     plt.gca().set_visible(False)
     cax = plt.axes([0.1, 0.2, 0.8, 0.6])
     cbar = plt.colorbar(orientation="horizontal", cax=cax)
     cbar.ax.tick_params(labelsize=22)
-    plt.savefig(ploc + 'histogram_lat_lon_map_colorbar.png', bbox_inches='tight')
-    plt.savefig(ploc + 'histogram_lat_lon_map_colorbar.pdf', bbox_inches='tight')
-    plt.show()
-    plt.close()
 
 
 
