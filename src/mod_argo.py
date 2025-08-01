@@ -379,13 +379,12 @@ def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), var_list =
     # Initialize list to hold interpolated DFs, one for each profile
     profile_interp_list = []
     for key, profDF in argoDF.groupby('profid'):
-        try:
-            profile_interp_list.append(interpolate_z_profile(profDF, pres_levels, var_list, 
+        profile_interp_list.append(interpolate_z_profile(profDF, pres_levels, var_list, 
                                             z_gap = z_gap,  # avoid interpolating over large gaps 
                                             surface_fill = surface_fill,
                                             ref_time = ref_time))
-        except: continue # if there is no data in the profile, skip it 
-        
+        # except: continue # if there is no data in the profile, skip it 
+
         # Combine all profiles into one DataFrame
     argoDF_regular = pd.concat(profile_interp_list) 
     argoDF_regular = argoDF_regular.set_index(["profid", 'pressure'])

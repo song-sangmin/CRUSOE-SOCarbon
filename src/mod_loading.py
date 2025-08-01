@@ -55,6 +55,11 @@ def import_data(type=['core', 'bgc', 'socat']):
 
     return result # coreDS, coreINDEX, bgcDS, bgcINDEX, socat
 
+def import_regresssion_data():
+    # Call in classified coreDS and coreINDEX
+    # Each profile associated with a class; all posterior probs given.
+    filepath = '/Volumes/cremas-repo/data/regression/'
+
 def main():
     print('Loading data...')
 
