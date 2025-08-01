@@ -3,9 +3,11 @@
 import matplotlib
 import matplotlib.pyplot     as plt  
 import mod_plotting as myplt
+from   cmocean               import cm as cmo
 import cartopy.crs           as     ccrs    
 from importlib import reload
 
+from mod_ocean import expand_datetime
 import mod_southpolarplot as sopo
 
 # tol_palette = myplt.tol8()
@@ -23,14 +25,15 @@ gmm_palette = [
 my_params = myplt.my_params(size=12, font_family='Futura', title_size=14)
 matplotlib.rcParams.update(my_params)
 
-# %% Main figures 
+# %% South Polar map figures 
 
 reload(myplt)
 reload(sopo)
 def sopolar_classes(class_locs, inds = range(8), 
-                    ax=None, figsize=(9,9), 
+                    ax=None, figsize=(9,9), dotsize=0.5, markerscale=8,
                     legend=True):
     """ 
+    Single plot, all classes by color
     @param class_locs: List of xarray DataArrays with locations for each class
          inds: Classes to plot (default is all classes)
                 Reminder that indices are 0-7 for classes 1-8
@@ -42,20 +45,29 @@ def sopolar_classes(class_locs, inds = range(8),
     sopo.format_southpolar(ax)
 
     for cl in inds:
-        ax.scatter(class_locs[cl].longitude, class_locs[cl].latitude, alpha=0.4, s=.5, 
+        ax.scatter(class_locs[cl].longitude, class_locs[cl].latitude, alpha=0.4, s=dotsize, 
                     transform=ccrs.PlateCarree(), 
                     label=('' + str(cl+1)), c=gmm_palette[cl])
     
         ax.add_patch(sopo.fronts_patch('sie')) #sie
 
     if legend:
-        ax.legend(loc='upper right', markerscale=8)
-
-
-def sopolar_classes_paneled(class_locs,
-                    ax=None, figsize=(15,10)):
+        ax.legend(loc='upper right', markerscale=markerscale)
     
-    fig, axs = plt.subplots(2,4, figsize=(15,10), layout='tight', subplot_kw={'projection': ccrs.SouthPolarStereo()})
+    return ax
+
+
+def sopolar_classes_paneled(class_locs, colorProbs=False, 
+                    ax=None, figsize=(15,10), numpanels=[2,4]):
+    """ 
+    Subpaneled plot of all class locations
+    @param      class_locs: Dict of xarray Datasets with locations for each class
+                            If coloring by probability, pass class_probs (dict of DataFrames)
+                colorbyProbs: (default False) Color points by probability ()
+                numpanels: [nrows, ncols] for subplots
+                            Default is [2,4] for 8 classes. Use [1,8] for one row
+    """
+    fig, axs = plt.subplots(numpanels[0], numpanels[1], figsize=(15,10), layout='tight', subplot_kw={'projection': ccrs.SouthPolarStereo()})
 
     for ax in axs.flatten():
         sopo.format_southpolar(ax)
@@ -66,19 +78,22 @@ def sopolar_classes_paneled(class_locs,
                    alpha=0.2, s=1, 
                    transform=ccrs.PlateCarree(), 
                    label=('' + str(ind)), c=gmm_palette[ind])
+        if colorProbs:
+            sca = ax.scatter(class_locs[ind].longitude, class_locs[ind].latitude, c=class_locs[ind].probability,
+               cmap=cmo.thermal, vmin=0, vmax=1,
+               alpha=1, s=1, transform=ccrs.PlateCarree(), label=('class' + str(ind)))
         ax.set_title('Class ' + str(ind+1), fontsize=14)
 
         
 
-
 # %% Plotting average profiles by class
-
-
 
 def mean_tracer_profiles(classDS, var='CT', 
                          ax=None, figsize=(9,6),
                          shadecolor = gmm_palette[0]):
-    """ Single group
+    """ 
+    Plot single tracer profile with shading for std deviation
+
     @param classDS: xarray Dataset with full profile data (for each class)
                     dims: profid, pressure
                     coords: profid, pressure...
@@ -103,7 +118,10 @@ def mean_tracer_profiles(classDS, var='CT',
 
 def mean_tracer_profiles_paneled(class_data, vars=['CT', 'SA'],
                                  figsize=(15,7)):
-    
+    """ 
+    Paneled by class
+    Use mean_tracer_profiles to plot CT and SA for each class
+    """
     fig, axs = plt.subplots(2,8, figsize=figsize, layout='tight', sharey=True)
     for ind, ax in enumerate(axs.flatten()[:8]):
         mean_tracer_profiles(class_data[ind], var=vars[0], 
@@ -117,4 +135,84 @@ def mean_tracer_profiles_paneled(class_data, vars=['CT', 'SA'],
     
     axs[0,0].invert_yaxis()
     # axs[1,0].invert_yaxis()
+
+
+# %% Plot GMM posterior probabilities
+def boxplot_gmm_probs(class_probs, ax=None, figsize=(9,6), 
+                 colors=gmm_palette):
+    """ 
+    Boxplot of GMM posterior probabilities for each class
+    @param class_probs: dict"""
+    if ax is None:
+        fig = plt.figure(figsize=figsize, layout='constrained')
+        ax = fig.gca()
+
+    list = [x.probability.values for x in class_probs.values()]
+
+    bplot = ax.boxplot(list, patch_artist=True, vert=False,
+                    tick_labels = [str(int(x)+1) for x in class_probs.keys()], 
+                    sym='.',
+                    flierprops={'color':'grey', 'markersize':1, 'alpha':0.4, 'marker':'.'},
+                    medianprops={'color':'crimson', 'linewidth':1.5})
+
+    # bplot = sns.violinplot(list, alpha=0.4, inner='quart', palette= tol_palette)
+
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(matplotlib.colors.to_rgba(color, alpha=0.5))
         
+    ax.set_xlabel('Probability')
+    ax.set_ylabel('Class')
+    ax.set_yticklabels([str(int(x)+1) for x in class_probs.keys()])
+    ax.set_title('GMM posterior probabilities')
+    ax.grid(alpha=0.2, zorder=0)
+    # ax.set_ylim([0,1])
+
+
+# %% Time dependence of class probabilities
+
+def scatter_probsXmonth(class_probs, inds=range(8), ax=None, figsize=(9,6), 
+                 colors=gmm_palette):
+    if ax is None:
+        fig = plt.figure(figsize=figsize, layout='constrained')
+        ax = fig.gca()
+    
+    for cl in inds:
+        # data = expand_datetime(class_probs[cl], type='dataframe')
+        data = class_probs[cl]
+        data['doy'] = data['yearday']%365.25
+        ax.scatter(data.doy, data.probability, 
+                   alpha=0.2, s=4, 
+                   label=('' + str(cl+1)), c=colors[cl])
+        
+    ax.legend(markerscale=7)
+
+
+def second_probs_seasonality(class_probs, probs, inds=[0,3], ax=None, figsize=(9,6), 
+                 colors=gmm_palette):
+    """ Sca
+    @param:     class_probs: dict of DataFrames with class probabilities
+                probs: DataFrame of all class probabilities 
+                inds: [cl, nextbest] where cl is the class to plot and nextbest is the class to compare to
+                """
+    
+    if ax is None:
+        fig = plt.figure(figsize=figsize, layout='constrained')
+        ax = fig.gca()
+    
+    cl = inds[0]
+    nextbest = inds[1]
+    data = class_probs[cl]
+
+    temp = probs.loc[data.index] # Table of probabilities for profiles assigned to class cl 
+    data['nextcl_'+str(nextbest+1)] = temp.loc[:, nextbest] # Take column of class you want to compare to
+
+    data['doy'] = data['yearday']%365.25
+    ax.scatter(data.doy, data.probability, 
+                alpha=0.2, s=4, 
+                label=('' + str(cl+1)), c=colors[cl])
+    
+    ax.scatter(data.doy, data['nextcl_'+str(nextbest+1)], 
+                alpha=0.2, s=4, 
+                label=('' + str(nextbest+1)), c=colors[nextbest+1])
+        
+    ax.legend(markerscale=7)

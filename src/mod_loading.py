@@ -23,15 +23,27 @@ def import_data(type=['core', 'bgc', 'socat']):
 
     if 'bgc' in type:
         filepath = '/Volumes/cremas-repo/data/bgc/L3-interp/'
-        bgcDS = xr.open_dataset(filepath + 'bgcDATA_valid_interp_2014-2023_acc20250313.nc')
-        bgcINDEX = xr.open_dataset(filepath + 'bgcINDEX_valid_interp_2014-2023_acc20250313.nc')
 
-        # Filter out any missing profiles (only found from one float, 33 profiles without associated core data)
+        # Option 1 (default to this): All profiles with good pH above 25dbar. 
+        bgcDS = xr.open_dataset(filepath + 'bgcDATA_valid_interp_2014-2023_acc20250729.nc') # Updated; More pressure levels
+        bgcINDEX = xr.open_dataset(filepath + 'bgcINDEX_valid_interp_2014-2023_acc20250729.nc')
+        # bgcDS = xr.open_dataset(filepath + 'bgcDATA_valid_interp_2014-2023_acc20250313.nc') # Older; ewer pressure levels
+        # bgcINDEX = xr.open_dataset(filepath + 'bgcINDEX_valid_interp_2014-2023_acc20250313.nc')
+
+        # Option 2: Include oxygen (not QC'ed) for diagnostic
+        bgcDS = xr.open_dataset(filepath + 'bgcDATA_valid_interp_noOxygenQC_2014-2023_acc20250729.nc') # Fewer pressure levels
+        bgcINDEX = xr.open_dataset(filepath + 'bgcINDEX_valid_interp_noOxygenQC_2014-2023_acc20250729.nc')
+        
+        # Filter out any profiles without good Core files (only found from one float, 33 profiles without associated core data)
         missing_ids = np.setdiff1d(bgcINDEX.profid.values, coreINDEX.profid.values)
         bgcINDEX = bgcINDEX.sel(profid=~np.isin(bgcINDEX.profid, missing_ids), drop=True)
         bgcDS = bgcDS.sel(profid=~np.isin(bgcDS.profid, missing_ids), drop=True)
+
+        # Make sure bgcINDEX has the same profids as bgcDS
+        bgcINDEX = bgcINDEX.sel(profid=bgcDS.profid.values)
         result.append(bgcDS)
         result.append(bgcINDEX)
+
 
     if 'socat' in type:
         filepath = '/Volumes/cremas-repo/data/socat/L2-mask/' 

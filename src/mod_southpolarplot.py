@@ -31,7 +31,10 @@ def format_southpolar(ax,
     """
     @param:
         ax:      Axes object, should have a SouthPolarStereo projection
-    """
+                # fig = plt.figure(figsize=figsize, layout='constrained')
+                # ax = plt.subplot(projection=ccrs.SouthPolarStereo())
+
+        """
     
     ### Limit the map to max latitude and below.
     ax.set_extent([-180, 180, -90, max_latitude], ccrs.PlateCarree())  # set to -29.4 for map out to 30 degrees or -39.4 for map out to 40 degrees
@@ -75,6 +78,8 @@ def format_southpolar(ax,
         ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
 
 def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie']):
+    """ 
+    Pass an axis with SouthPolarStereo projection, add specified fronts"""
     for type in types:
         ax.add_patch(fronts_patch(type))
 

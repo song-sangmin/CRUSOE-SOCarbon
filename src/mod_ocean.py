@@ -27,9 +27,9 @@ def ytd2datetime(num, ref_time):
 
 def get_ydsines(yearday):
     """ For adding seasonal variable in Training_RandomForest.ipynb"""
-    yearday = yearday%365
-    ydcos = np.cos(2*np.pi*np.array(yearday)/365)
-    ydsin = np.sin(2*np.pi*np.array(yearday)/365)
+    yearday = yearday%365.25
+    ydcos = np.cos(2*np.pi*np.array(yearday)/365.25)
+    ydsin = np.sin(2*np.pi*np.array(yearday)/365.25)
 
     return [ydcos, ydsin]
 
