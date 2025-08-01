@@ -200,6 +200,7 @@ def filter_qc_flags(float_df, qc_vars = 'all', use_flags=['1', '2', '5', '8']):
         @param: float_df (pd.DataFrame): dataframe of float data
                 qc_vars (list): list of QC variables to filter
                         default 'all' filters on any variable with '_qc' in the name
+                        ['temperature_qc', 'salinity_qc', 'pressure_qc', 'time_qc', 'position_qc', 'pH_qc']
                 use_flags : flags that pass QC; default are standard argo QC flags 1, 2, and 8
                         '1' for 'good' data (only '1' returned in 'research' mode)
                         '2' for 'probably good' data
@@ -382,8 +383,9 @@ def regrid_pressure_levels(argoDF, pres_levels = np.arange(0,1001,5), var_list =
                                             z_gap = z_gap,  # avoid interpolating over large gaps 
                                             surface_fill = surface_fill,
                                             ref_time = ref_time))
+        # except: continue # if there is no data in the profile, skip it 
 
-    # Combine all profiles into one DataFrame
+        # Combine all profiles into one DataFrame
     argoDF_regular = pd.concat(profile_interp_list) 
     argoDF_regular = argoDF_regular.set_index(["profid", 'pressure'])
     # argoDF_regular = argoDF_regular.dropna(subset=['CT', 'SA'])

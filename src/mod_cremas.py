@@ -8,6 +8,20 @@ import pandas                as pd
 # socatv2024_SO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_DATA.csv')
 # socatv2024_SO_INFO = pd.read_csv('/Users/sangminsong/Library/CloudStorage/OneDrive-UW/Code/CREMAS/MATLAB-SOCAT/socatv2024_SouthernOceans_INFO.csv')
 
+# As of Apr 21 2025
+# filepath = '/Volumes/cremas-repo/data/bgc/L3-interp/'
+# bgcDS = xr.open_dataset(filepath + 'bgcDATA_valid_interp_2014-2023_acc20250313.nc')
+# bgcINDEX = xr.open_dataset(filepath + 'bgcINDEX_valid_interp_2014-2023_acc20250313.nc')
+
+# filepath = '/Volumes/cremas-repo/data/core/L3-interp/'
+# coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2023_acc20250424.nc')
+# coreINDEX = xr.open_dataset(filepath + 'coreINDEX_valid_interp_2014-2023_acc20250424.nc')
+
+# filepath = '/Volumes/cremas-repo/data/socat/L2-mask/' 
+# # socat = pd.read_csv(filepath + 'SOCATv2024_SO_resampled_3h_median_acc20250121.csv')
+# socat = xr.open_dataset(filepath + 'SOCATv2024_SO_3h_open_ocean_INDEX_acc20250314.nc')
+# socat['yearday'] = myocn.datetime2ytd(socat['datetime'].astype('datetime64[ns]'), ref_time='2014-01-01')
+# socat = socat.where(socat.latitude<-35, drop=True)
 
 
 # socat_3h = pd.read_csv('../data/SOCATv2024_SO_resampled_3h.csv')

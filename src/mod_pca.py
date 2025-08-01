@@ -9,8 +9,8 @@ from   sklearn.decomposition import PCA
 from   sklearn.decomposition import KernelPCA
 from   sklearn               import manifold
 # from   xgcm                  import Grid
-
-
+import pandas                as pd
+from sklearn.mixture import GaussianMixture as GMM
 
 # %% Preprocessing steps 
 def center_byPressure(argoDS, vars_list= ['CT', 'SA'], with_scaling = False) -> xr.Dataset:
@@ -46,14 +46,118 @@ def center_byPressure(argoDS, vars_list= ['CT', 'SA'], with_scaling = False) -> 
 
     return centered_DS
 
+def pca_transform(Xtrain, n_comp=2, show=True):
+    """
+    Fit and apply PCA to input data
+    @param:  Xtrain:     Dataframe of Argo data to transform (indexed by profid)
+                            (M, N) where M = # profiles, N = # pressure levels x 2 
+             n_comp:         number of PCA components
+    @return: Xtrans:        Dataframe of PCA transformed data
+             mypca:          PCA object 
+             comps:          dictionary of PCA components (eigenvectors length N)
+    """
+    # if show: 
+        # print('===> Training PCA:')
+    # Fit PCA 
+    mypca = PCA(n_comp).fit(Xtrain) # PCA object
+    labels = ['PC'+str(x+1) for x in range(n_comp)]
+    comps = {k:v for k, v in zip(labels, mypca.components_)} # PCA components (eigenvectors)
 
+    variance_total = np.sum(mypca.explained_variance_ratio_)
+    if show:
+        print('n_PCs:', str(n_comp), '\texplained_variance:', str(variance_total))
 
+    # Apply transformation to input data
+    Xtrans = pd.DataFrame(mypca.transform(Xtrain), columns=comps.keys()) # Xtrans
 
+    return Xtrans, mypca, comps
 
 # %% Fit the PCA model 
 
+def run_pca_and_gmm(centered_coreDS, coreDS, coreINDEX, n_pca, n_gmm, dbar_limit=1001):
+    # centered_coreDS = center_byPressure(coreDS, with_scaling = False)
+    # Stack temperature and salinity across pressure levels
+    # centered_data = centered_coreDS
+
+    centered_data = centered_coreDS.where(centered_coreDS.pressure < dbar_limit, drop=True)
+    temp_df = centered_data.CT.transpose('profid', 'pressure').to_pandas()
+    sal_df  = centered_data.SA.transpose('profid', 'pressure').to_pandas()
+
+    # Rename columns to distinguish them
+    plevels = centered_data.pressure.values
+    temp_df.columns = [f'CT_{i}' for i in plevels]
+    sal_df.columns  = [f'SA_{i}' for i in plevels]
+
+    # Concatenate along columns
+    pca_input = (pd.concat([temp_df, sal_df], axis=1)
+                    # .drop(columns=['CT_0', 'SA_0']) 
+                    .dropna(axis=0) 
+                    ) 
+
+    # ====== Scale temperature and salinity columns by their standard deviation
+    temp_cols = [col for col in pca_input.columns if col.startswith("CT_")]
+    temp_std = pca_input[temp_cols].stack().std()
+    pca_input[temp_cols] = pca_input[temp_cols] / temp_std
+
+    # ==== Salinity
+    sal_cols = [col for col in pca_input.columns if col.startswith("SA_")]
+    sal_std = pca_input[sal_cols].stack().std()
+    pca_input[sal_cols] = pca_input[sal_cols] / sal_std
+
+    # Run and store components
+    [Xtrans, pca_obj, PCdict]= pca_transform(pca_input, n_comp=n_pca)
+    # Xtrans['profid']=Xtrain.index.values
+
+    # =======  Fit GMM ========
+    gmm = GMM(
+            n_components=n_gmm, covariance_type='diag', max_iter=10000, random_state=0,
+            means_init=None)
+    gmm.fit(Xtrans)
 
 
+    Y_gmm = (pd.concat([Xtrans,
+                    pd.Series(gmm.predict(Xtrans), name='class')], axis=1))
+    Y_gmm.set_index(pca_input.index, inplace=True) # set profid as index
+
+    # Use profids to separate out data by class
+    class_locs = {k:None for k in range(gmm.n_components)}
+    class_data = {k:None for k in range(gmm.n_components)}
+    for ind in range(gmm.n_components):
+        class_locs[ind] = coreINDEX.sel(profid=[x for x in Y_gmm[Y_gmm['class']==ind].index.values])
+        class_data[ind] = coreDS.sel(profid=[x for x in Y_gmm[Y_gmm['class']==ind].index.values])
+
+    # probs = pd.DataFrame(gmm.predict_proba(Xtrans))
+
+    # == Print number of profiles by class
+    print('Number of profiles by class')
+    for k, v in class_locs.items():
+        print('class', k+1, ':', len(v.profid.values))
+    # len(class_locs[0].profid.values)
+
+    return pca_input, Xtrans, pca_obj, PCdict, gmm, Y_gmm, class_locs, class_data
+
+def calc_postprobs(gmm, Xtrain, Xtrans, Y_gmm, class_locs):
+    """ 
+    """
+    allprobs = pd.DataFrame(gmm.predict_proba(Xtrans))
+    allprobs.set_index(Xtrain.index, inplace=True) 
+
+    postprobs = {k:None for k in range(gmm.n_components)}
+    for ind in range(gmm.n_components):
+        postprobs[ind] = allprobs.loc[[x for x in Y_gmm[Y_gmm['class']==ind].index.values]]
+
+    # Make dictionary of probabilities with locations for plotting
+    class_probs = {k:None for k in range(gmm.n_components)}
+
+    for ind in range(gmm.n_components):
+        temp = class_locs[ind].to_dataframe()
+        temp['probability'] = postprobs[ind][ind].values
+        class_probs[ind] = temp
+    
+    return allprobs, class_probs
+
+
+# %% 
 #####################################################################
 # Utilities for model selection (e.g. BIC, AIC)
 #####################################################################
