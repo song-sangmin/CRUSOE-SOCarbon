@@ -310,6 +310,9 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
     return arr
 
 # %% Calculated variables
+
+# def add_mld(platDS, indexer='profid'):
+
 def add_Pchip_buoyancy(plat_DF):
     """
     Calculate buoyancy (actually Nsquared using gsw) 

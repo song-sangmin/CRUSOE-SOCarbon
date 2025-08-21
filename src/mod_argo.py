@@ -47,8 +47,12 @@ def get_wmo_DS(argoDS, wmo=None):
         # all_wmoids = pd.DataFrame(argoDS.wmoid)[0].unique()
         all_wmoids = argoDS.to_dataframe().wmoid.unique()
         wmo = all_wmoids[np.random.randint(0, len(all_wmoids))]
-    wmo_DS = argoDS.sel(profid=[p for p in argoDS.profid.values if str(p)[:7] == str(wmo)[:7]])
-    return wmo_DS, wmo
+    # wmo_DS = argoDS.sel(profid=[p for p in argoDS.profid.values if str(p)[:7] == str(wmo)[:7]])
+
+    valid_profids = [x for x in argoDS.profid.values if x.startswith(str(wmo)[:7])]
+    wmo_DS = argoDS.sel(profid=np.isin(argoDS.profid, valid_profids))
+
+    return wmo_DS, str(wmo)[:7]
 
 def get_n_random_profiles(argoDF, n=10):
     """
@@ -251,6 +255,45 @@ def to_xr_dataset(argoDF, nc_attrs={'date':str(datetime.datetime.now())}):
     return argo_DS
     
 
+# %% Adding calculated variables
+
+def calc_mlp(platDS, threshold=0.03):  
+    """  
+    Calculating mixed layer pressure (MLP) for each Argo profile 
+    Updated Aug 12 2025
+    Use linear interpolation to find mixed layer pressure between two pressure levels
+
+    @param:     platDS: xr Dataset with 'profid' as a dimension
+                        (Current version uses 5dbar incremented data)
+                threshold: Density threshold for mixed layer pressure calculation (default is 0.03 kg/m^3)
+    @return:    prof_mlps: DataFrame with 'profid' as index and 'mlp' as column
+                no_data: List of profids without valid data 
+    """
+    prof_mlps = pd.DataFrame(index=pd.unique(platDS.profid.values), columns=['mlp'])
+    no_data = [] 
+    
+    for id, prof in platDS.to_dataframe().groupby('profid'):
+        prof_df = prof.reset_index().copy()
+
+        try: # general catch for missing data, technically don't need for our L3 data
+            dens10 = prof_df.loc[prof_df.pressure==10].sigma0.values[0]
+            dens_tofind = dens10 + threshold 
+            mask = prof_df.sigma0.values > dens_tofind
+
+            if mask.any(): # If any values meet threshold density condition
+                idx = prof_df.sigma0.index[np.argmax(mask)]
+                (p0,d0)= (prof_df.pressure[np.argmax(mask)-1], prof_df.sigma0[np.argmax(mask)-1]) # obs just above mlp
+                (p1,d1)= (prof_df.pressure[np.argmax(mask)], prof_df.sigma0[np.argmax(mask)]) # first obs below mlp
+
+                mlp = p1 + (dens_tofind - d1) * ((p1-p0)/(d1-d0)) # Linear interpolation
+                prof_mlps.loc[id, 'mlp'] = mlp
+
+            else: 
+                prof_mlps.loc[id, 'mlp'] = np.nan
+        except: 
+            no_data.append(id)
+        
+    return prof_mlps, no_data
 
 # %% Interpolation functions
 # =============================================================================
@@ -567,7 +610,7 @@ def plot_profiles_from_WMO(floatDF, var = 'CT', ax=None, dotsize=2, ylims=[1000,
     return ax
 
 
-def plot_TS_diagnostics(wmo_DF, figsize=(12,8), dot_small=2, dot_medium = 8, dot_large = 20):
+def plot_TS_diagnostics(wmo_DF, figsize=(12,8), dot_small=2, dot_medium = 8, dot_large = 20, add_mlp=False):
     """ 
     Plot diagnostic figures for a single WMO dataframe.
     @param: wmo_DF: dataframe with 'profid' column
@@ -580,7 +623,7 @@ def plot_TS_diagnostics(wmo_DF, figsize=(12,8), dot_small=2, dot_medium = 8, dot
             ax4,5 : Profiles of CT, SA
             ax6   : T-S diagram
     """
-    wmo_DF = wmo_DF.reset_index()
+    wmo_DF = wmo_DF.reset_index().dropna(axis=0, subset=['CT', 'pressure'])
     # my_wmo = wmo_DF['wmoid'][0]
     my_wmo = wmo_DF.wmoid.dropna().unique()[0].astype(int)
     print_float_bounds(wmo_DF)
@@ -615,6 +658,10 @@ def plot_TS_diagnostics(wmo_DF, figsize=(12,8), dot_small=2, dot_medium = 8, dot
         ax.set_ylabel('pressure')
         ax.set_title('WMO ' + str(my_wmo)[:7] + ', SA')
 
+    if add_mlp:
+        for ax in [ax1, ax2]:
+            # ax.scatter(wmo_DF['datetime'], wmo_DF['mlp'], c='w', marker='X', s=dot_large, alpha=1)
+            ax.scatter(wmo_DF['datetime'], wmo_DF['mlp'], c='r', marker='_', s=dot_medium, alpha=0.7)
     for ax in [ax3]:
         sca_map = ax.scatter(wmo_DF.longitude, wmo_DF.latitude, c='r', s=dot_medium, transform=ccrs.PlateCarree())
         ax.coastlines(resolution='50m',color='gray')

@@ -2,6 +2,8 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 import mod_ocean
+import gsw
+import datetime
 # from mod_ocean import datetime2ytd
 
 
@@ -14,10 +16,12 @@ def import_data(type=['core', 'bgc', 'socat']):
     # # ADAPTING JUN 17 2025
 
     result = []
+
+    # This is outside because we may need to match bgc to core even without returning
+    filepath = '/Volumes/cremas-repo/data/core/L3-interp/'
+    coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2023_acc20250424.nc')
+    coreINDEX = xr.open_dataset(filepath + 'coreINDEX_valid_interp_2014-2023_acc20250424.nc')
     if 'core' in type:
-        filepath = '/Volumes/cremas-repo/data/core/L3-interp/'
-        coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2023_acc20250424.nc')
-        coreINDEX = xr.open_dataset(filepath + 'coreINDEX_valid_interp_2014-2023_acc20250424.nc')
         result.append(coreDS)
         result.append(coreINDEX)
 
@@ -58,7 +62,28 @@ def import_data(type=['core', 'bgc', 'socat']):
 def import_regresssion_data():
     # Call in classified coreDS and coreINDEX
     # Each profile associated with a class; all posterior probs given.
-    filepath = '/Volumes/cremas-repo/data/regression/'
+    filepath = '../working-vars/pcm/'
+
+    bgcDS = xr.open_dataset(filepath + 'clustered_bgcArgo_output.nc')
+    socatDS = xr.open_dataset(filepath + 'clustered_socat_output.nc')
+    
+    # Get bgcINDEX from above function
+    [_, bgcINDEX] = import_data(type=['bgc'])
+    # Drop any BGC profiles that were not classified
+    missing_ids = np.setdiff1d(bgcINDEX.profid.values, bgcDS.profid.values)
+    bgcINDEX = bgcINDEX.sel(profid=~np.isin(bgcINDEX.profid, missing_ids), drop=True)
+
+
+    # # Prepare socatDS
+    socatDS = socatDS.rename_vars({'index': 'sid'})  # Rename
+    socatDS['sample_depth'] = socatDS['sample_depth'].fillna(0) # CHECK IF WE SHOULD DO THIS
+    socatDS['pressure'] = gsw.p_from_z(socatDS.sample_depth, socatDS.latitude)
+
+    #  Compute CT, SA
+    socatDS['SA'] = gsw.SA_from_SP(socatDS.sal, socatDS.pressure, socatDS.longitude, socatDS.latitude)
+    socatDS['CT'] = gsw.CT_from_t(socatDS.SA, socatDS.sst, socatDS.pressure)
+
+    return [bgcINDEX, bgcDS, socatDS]
 
 def main():
     print('Loading data...')
