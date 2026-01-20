@@ -73,9 +73,9 @@ def format_southpolar(ax,
         
     ### Add in coastlines/features
     if color_land:
-        ax.add_feature(cfeature.LAND, zorder=1, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
+        ax.add_feature(cfeature.LAND, zorder=5, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
     else:
-        ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
+        ax.coastlines(resolution = "50m", zorder=5, linewidth = coast_linewidth)
 
 def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie']):
     """ 
@@ -95,13 +95,13 @@ def fronts_patch(type='stf'):
         result  = plt.Polygon(saf,  fill=False, edgecolor='grey',   zorder=14)
     if 'pf' == type:
         pf   = so_fronts.shape(2).points
-        result   = plt.Polygon(pf,   fill=False, edgecolor='grey',    zorder=13)
+        result   = plt.Polygon(pf,   fill=False, edgecolor='grey',    zorder=0) #, facecolor='yellow', alpha=0.2)
     if 'sacc' == type:
         sacc = so_fronts.shape(3).points
-        result = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=12)
+        result = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=1) #, alpha=0.1) #, facecolor='white')
     if 'sie' == type:
         sie  = so_fronts.shape(4).points
-        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=0,  facecolor='darkgrey', alpha=0.4)
+        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=2,  facecolor='darkgrey', alpha=0.4)
     return result
 
 

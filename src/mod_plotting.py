@@ -6,11 +6,12 @@ import pandas                as pd
 import xarray                as xr
 from   datetime              import date                 # for saving figures with today's date
 import datetime
+import scipy
 
 # for all plots
 import matplotlib
 import matplotlib.pyplot     as plt                      # needed to make map setup
-import matplotlib.colors     as colors
+import matplotlib.colors     as mpcolors
 from   matplotlib.ticker     import EngFormatter         # for degree symbol in axis
 import cmocean                                           # to add colorbars
 from   cmocean               import cm as cmo
@@ -59,6 +60,7 @@ def tol8():
 # %% Set up units  ======================================
 
 umol_unit = (r'$\mathbf{[\mu} \mathregular{mol~kg} \mathbf{^{-1}]}$')
+uatm_unit = (r'$\mathbf{[\mu} \mathregular{atm}}$')
 # umol_unit = (r'$[\mu \mathregular{mol~kg^{-1}}]$')
 eke_unit = (r'$\mathbf{[m^2~s^{-2}]}$')
 umol_unit_squared = (r'$\mathbf{[\mu} \mathregular{mol^2~kg} \mathbf{^{-2}]}$')
@@ -79,6 +81,17 @@ overline_title = (r'$\overline{\mathregular{N}} \mathregular{_{ML}}$ ')
 hvar_title = ('s'+ r'$ \mathbf{^2_{H,NO_3}}$ ')
 bbp_title = ('bbp' + r'$_{\mathregular{470}} $')
 hb_title = ('|' + r'$\mathbf{\nabla_h}\mathregular{b}$' + '|')
+
+gmm_palette = [
+    "#332288",  # dark blue   
+    "#CC6677",  # rose
+    "#DDCC77",  # sand
+    "#44AA99",  # teal
+    "#117733",  # green
+    "#88CCEE",  # light blue
+    "#882255",   # wine
+    "#999933",  # olive
+]
 
 
 # %% Functions
@@ -141,194 +154,110 @@ def discrete_cmap(N, base_cmap=None):
     return base.from_list(cmap_name, color_list, N)
 
 
-# %% Example code:
+# %% Error analysis
+def single_boxplot(data, ax=None, boxcolor='r', lw=1.5, flieralpha=0):
+    """ 
+    @param
+    data: cv_kfold.val_error['Model_G'].values # list of 10MAEs
+    """
+    if ax == None:
+        fig  = plt.figure(figsize=(6,2), tight_layout=True)
+        ax = plt.gca()
 
-# %%  Set up Southern Ocean Map   ======================================
-
-# def setup_SO_axes(
-#     ax:                    matplotlib.axes.Axes,
-#     fig:                   matplotlib.figure.Figure,
-#     max_latitude:          float = -35,
-#     add_gridlines:         bool  = True,
-#     add_frontlines:        bool  = True,
-#     color_land:            bool  = False,
-#     land_edgecolor:        str   = 'grey',
-#     land_facecolor:        str   = 'grey',
-#     fontsize:              float = 10,
-#     map_facecolor:         str   = 'white',
-#     coast_linewidth:       float = 0.3,
-#     gridlines_linewidth:   float = 0.5,
-#     girdlines_color:       str   = 'grey',
-#     gridlines_alpha:       float = 0.5,
-#     longitude_label_color: str   = 'grey',
-#     latitude_label_color:  str   = 'grey'
-# ) -> None:
-#     """
-#     Adapted from Hannah Joy Warren (originally "map_southern_ocean_axes_setup()"
+    # lw= 1.5
+    bplot = ax.boxplot(data, widths=0.35, vert=False, patch_artist=True,
+                    medianprops= {'color':boxcolor, 'linewidth':lw},
+                        capprops={'color':boxcolor, 'linewidth':lw},
+                        whiskerprops={'color':boxcolor, 'linewidth':lw},
+                        flierprops={'markeredgecolor': 'gray', 'marker':'|', 'alpha':flieralpha, 'zorder':1}, #{'color':boxcolor, 'linewidth':1.5},
+                        boxprops = {'color':boxcolor, 'linewidth':lw})
     
-#     This function sets up the subplot so that it is a cartopy map of the Southern Ocean.
-#     returns void as the ax and figure objects are pointers not data.
-#     Args:
-#         ax  (matplotlib.axes.Axes):     The axis object to add the map to.
-#         fig (matplotlib.figure.Figure): The figure object for the figure in general.
-#         add_gridlines (bool):           Whether or not to add gridlines to the plot.
-#     """
+    ax.grid(zorder=1, alpha=0.5)
+    ax.invert_yaxis()
+    ax.set_ylabel('', fontsize=16)
+    # ax.set_yticklabels([''])
+    ax.set_ylim([0.75, 1.25])
+
+
+    colors = [boxcolor]
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(mpcolors.to_rgba(color, alpha=0.3))
+
+    return ax
+
+# Used to be called boxplot_across_folds
+def boxplot_across_columns(data, ax=None, boxcolor='r'):
+    """ 
+    @param
+    if data has columns, each is a different line
+    data: cv_kfold.val_error['Model_G'].values # list of 10MAEs
+    """
+    if ax == None:
+        fig  = plt.figure(figsize=(6,4), tight_layout=True)
+        ax = plt.gca()
+
+    lw= 1.5
+    bplot = ax.boxplot(data, widths=0.65, vert=False, patch_artist=True,
+                    medianprops = {'color':'k', 'linewidth':lw},
+                    capprops= {'color':'k', 'linewidth':lw},
+                    flierprops= {'color':'k', 'linewidth':lw},
+                    boxprops = {'color':'k', 'linewidth':lw})
     
-    
-#     ### Limit the map to max latitude and below.
-#     ax.set_extent([-180, 180, -90, max_latitude], ccrs.PlateCarree())  # set to -29.4 for map out to 30 degrees or -39.4 for map out to 40 degrees
-   
-#     ### Tune the subplot layout
-#     # fig.subplots_adjust(bottom=0.05, top=0.95, left=0.04, right=0.95, wspace=0.02)
-    
-#     ### Make the background of the plot white
-#     ax.set_facecolor(map_facecolor)
+    # ax.set_yticklabels([x[-1] for x in data.keys()])
+    ax.grid(zorder=1, alpha=0.5)
+    ax.invert_yaxis()
+    ax.set_ylabel('', fontsize=16)
+    # ax.set_yticklabels([''])
+    # ax.set_xlabel("Nitrate Error " + umol_unit)
 
-#     ### Make SO plot boundary a circle
-#     def plot_circle_boundary() -> None:
-#         """
-#         Make SO plot boundary a circle.
-#         Compute a circle in axes coordinates, which we can use as a boundary for the map.
-#         We can pan/zoom as much as we like - the boundary will be permanently circular.
-#         """
-#         theta  = np.linspace(0, 2 * np.pi, 100)
-#         center, radius = [0.5, 0.5], 0.5  ## could use 0.45 here, as Simon Thomas did
-#         verts  = np.vstack([np.sin(theta), np.cos(theta)]).T
-#         circle = mpath.Path(verts * radius + center)
-#         ax.set_boundary(circle, transform = ax.transAxes)
+    # ax.axvline(x=0.5, color='r', linestyle='dotted', linewidth=2, alpha=0.6, zorder=0)
+    # ax.axvline(x=-0.5, color='r', linestyle='dotted', linewidth=2, alpha=0.6, zorder=0)
+    ax.axvline(x=0, color='k', linestyle='dotted', linewidth=1.5, alpha=0.7, zorder=0)
 
-#     plot_circle_boundary()
+    colors = [boxcolor]
+    # for mdl in model_list:
+    #     colors.append(model_palettes[mdl])
+
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(mpcolors.to_rgba(color, alpha=0.5))
+    return ax
 
 
-#     ### Add gridlines (if True)
-#     if add_gridlines:
-#         ax.gridlines(color = girdlines_color, alpha = gridlines_alpha, linewidth = gridlines_linewidth)
-        
-#                 # specifying xlocs/ylocs yields number of meridian/parallel lines
-#         dmeridian = 60  # spacing for lines of meridian
-#         dparallel = 20  # spacing for lines of parallel -- can change this to 10
-#         num_merid = int(360/dmeridian + 1)
-#         num_parra = int(180/dparallel + 1)
-#         gl = ax.gridlines(crs=ccrs.PlateCarree(), 
-#                           xlocs=np.linspace(-180, 180, num_merid), 
-#                           ylocs=np.linspace(-90, 90, num_parra), 
-#                           linestyle="-", linewidth=0.5, color='grey', alpha=gridlines_alpha)
-        
-#         # for label alignment
-#         va = 'center' # also bottom, top
-#         ha = 'center' # right, left
-#         degree_symbol = u'\u00B0'
+def error_kde(data, ax=None, textsize=14, ymax=None, pltcolor='r', 
+              linelabel='', linestyle='solid', lw=2):
+    """
+    New KDE plot using all combined validation errors from K-Fold 
+    @param:     data       list of errors
 
-#         # for locations of (meridional/longitude) labels
-#         lond = np.linspace(-180, 180, num_merid)
-#         latd = np.zeros(len(lond))
+    """ 
 
-#         # for (alon, alat) in zip(lond, latd):
-#         #     projx1, projy1 = ax.projection.transform_point(alon, max_latitude+1, ccrs.Geodetic())  # set to -29 for map out to 30 degrees or -39 for a map out to 40 degrees
-#         #     if alon>-180 and alon<0:
-#         #         ha = 'right'
-#         #         va = 'center'
-#         #     if alon>0 and alon<180:
-#         #         ha = 'left'
-#         #         va = 'center'
-#         #     if np.abs(alon-0)<0.01:
-#         #         ha = 'center'
-#         #         va = 'bottom'
-#         #     if alon==-180:
-#         #         ha = 'center'
-#         #         va = 'top'
-#         #     if (alon<180):
-#         #         txt =  ' {0} '.format(str(int(alon)))+degree_symbol
-#         #         ax.text(projx1, projy1, txt, va=va, ha=ha, color=latitude_label_color, fontsize=fontsize)
-                
-#         # # for locations of (meridional/longitude) labels select longitude: 315 for label positioning
-#         # lond2 = 60*np.ones(len(lond))
-#         # latd2 = np.linspace(-90, 90, num_parra)
-#         # va, ha = 'center', 'center'
-#         # for (alon, alat) in zip(lond2, latd2):
-#         #     projx1, projy1 = ax.projection.transform_point(alon, alat, ccrs.Geodetic())
-#         #     txt =  ' {0} '.format(str(int(alat)))+degree_symbol
-#         #     ax.text(projx1, projy1, txt, va=va, ha=ha, color=longitude_label_color, fontsize=fontsize) 
-        
-#     if add_frontlines:
-#         ax.add_patch(stf_patch)
-#         ax.add_patch(saf_patch)
-#         ax.add_patch(pf_patch)
-#         ax.add_patch(sacc_patch)
-#         ax.add_patch(sie_patch)
+    if ax == None:
+        fig  = plt.figure(figsize=(6,4), tight_layout=True)
+        ax = plt.gca()
 
-        
-#     ### Add in coastlines/features
-#     if color_land:
-#         ax.add_feature(cfeature.LAND, zorder=1, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
-#     else:
-#         ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
+    # Add Gaussian KDE to estimate probability density function
+    x = np.linspace(data.min(), data.max(), 1000)
+    kde = scipy.stats.gaussian_kde(data)
 
-    
+    ls = linestyle
+    den = ax.plot(x, kde(x), color=pltcolor, linewidth=lw, linestyle=ls, alpha=0.6, label=linelabel)
 
-# ### Make SO plot boundary a circle
-# def plot_circle_boundary(ax) -> None:
-#     """
-#     Make SO plot boundary a circle.
-#     Compute a circle in axes coordinates, which we can use as a boundary for the map.
-#     We can pan/zoom as much as we like - the boundary will be permanently circular.
-#     """
-#     theta  = np.linspace(0, 2 * np.pi, 100)
-#     center, radius = [0.5, 0.5], 0.5  ## could use 0.45 here, as Simon Thomas did
-#     verts  = np.vstack([np.sin(theta), np.cos(theta)]).T
-#     circle = mpath.Path(verts * radius + center)
-#     ax.set_boundary(circle, transform = ax.transAxes)
+    if ymax != None:
+        ax.set_ylim([0, ymax])
+
+    sns.set_palette('Dark2')
+    ax.grid(alpha=0.5, zorder=1)
+    ax.axvline(x=0, color='k', linestyle='dotted', linewidth=1.5, alpha=0.7, zorder=0)
+
+    if len(linelabel)>0:
+        leg = ax.legend(fontsize=14, framealpha=1)
+        # for legobj in leg.legend_Handles:
+        #     legobj.set_linewidth(3.5)
+
+    return ax
 
 
-# # Plot of all SOCAT data
-
-# map_proj = ccrs.SouthPolarStereo()
-
-# fig  = plt.figure(figsize=[8,8], dpi=300) # inches
-# ax1  = plt.subplot(projection = map_proj)
-
-# # Set up plot axes
-# map_southern_ocean_axes_setup(ax1, fig, 
-#                               add_gridlines         = False, 
-#                               color_land            = True,
-#                               land_facecolor        = land_facecolor,
-#                               land_edgecolor        = land_edgecolor,
-#                               fontsize              = fontsize_small,
-#                               map_facecolor         = plot_facecolor, #'#d7dce8',
-#                               coast_linewidth       = coast_linewidth)
-
-
-# ### Add front and sea ice edge
-# stf_patch  = plt.Polygon(stf,  fill=False, edgecolor=stf_edgecolor_gmm_map,   zorder=15)
-# saf_patch  = plt.Polygon(saf,  fill=False, edgecolor=saf_edgecolor_gmm_map,   zorder=14)
-# pf_patch   = plt.Polygon(pf,   fill=False, edgecolor=pf_edgecolor_gmm_map,    zorder=13)
-# sacc_patch = plt.Polygon(sacc, fill=False, edgecolor=sacc_edgecolor_gmm_map,  zorder=12)
-# sie_patch  = plt.Polygon(sie,  fill=True,  edgecolor=sie_edgecolor_gmm_map,   zorder=0,  facecolor=sie_facecolor_gmm_map, alpha=0.4)
-
-# ax1.add_patch(stf_patch)
-# ax1.add_patch(saf_patch)
-# ax1.add_patch(pf_patch)
-# ax1.add_patch(sacc_patch)
-# ax1.add_patch(sie_patch)
-
-
-# ### Add land on top
-# ax1.add_feature(cfeature.LAND, zorder=16, linewidth = coast_linewidth, edgecolor = land_edgecolor, facecolor = land_facecolor)
-
-
-# for k in expokeys:
-#     dat = expo_dict_3h[k]
-#     if len(dat) > 0:
-#         ax1.scatter(x=dat.longitude.values, y=dat.latitude.values, c='m', transform=ccrs.PlateCarree(), zorder=10,  s=1, alpha=0.3)
-
-# # plot_circle_boundary(ax1)  # this doesn't work to plot the circle again over top
-
-
-# plt.show()
-
-
-
-
+# %% Maps
 def plot_histogram_of_profile_locations(ploc, profiles, lon_range, lat_range,
                                         source='all', binsize=2,
                                         bathy_fname="bathy.nc",

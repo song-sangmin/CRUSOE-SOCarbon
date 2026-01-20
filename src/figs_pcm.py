@@ -57,8 +57,8 @@ def sopolar_classes(class_locs, inds = range(8),
     return ax
 
 
-def sopolar_classes_paneled(class_locs, colorProbs=False, 
-                    ax=None, figsize=(15,10), numpanels=[2,4]):
+def sopolar_classes_paneled(class_locs, colorProbs=False, colorError=False, vlim=None, add_colorbar=False,
+                    ax=None, figsize=(15,10), numpanels=[2,4], dotsize=2, dotalpha=0.8):
     """ 
     Subpaneled plot of all class locations
     @param      class_locs: Dict of xarray Datasets with locations for each class
@@ -74,15 +74,24 @@ def sopolar_classes_paneled(class_locs, colorProbs=False,
         sopo.add_frontlines(ax)
 
     for ind, ax in enumerate(axs.flatten()):
-        ax.scatter(class_locs[ind].longitude, class_locs[ind].latitude, 
-                   alpha=0.2, s=1, 
+        knum = ind+1 #change to ind 
+        ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, 
+                   alpha=dotalpha, s=dotsize, 
                    transform=ccrs.PlateCarree(), 
-                   label=('' + str(ind)), c=gmm_palette[ind])
+                   label=('' + str(knum)), c=gmm_palette[ind])
         if colorProbs:
-            sca = ax.scatter(class_locs[ind].longitude, class_locs[ind].latitude, c=class_locs[ind].probability,
+            sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum].probability,
                cmap=cmo.thermal, vmin=0, vmax=1,
-               alpha=1, s=1, transform=ccrs.PlateCarree(), label=('class' + str(ind)))
-        ax.set_title('Class ' + str(ind+1), fontsize=14)
+               alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
+        elif colorError:
+            sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum].val_error,
+                cmap='RdBu', vmin=-vlim, vmax=vlim,
+                alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
+        
+        ax.set_title('Class ' + str(knum), fontsize=14)
+    if add_colorbar:
+        plt.colorbar(sca, ax=axs.flatten()[-1], orientation='vertical')
+    return ax
 
         
 

@@ -25,6 +25,15 @@ def ytd2datetime(num, ref_time):
     """
     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
 
+def add_decimalyr(df):
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df['decimalyr'] = (
+        df['datetime'].dt.year +
+        (df['datetime'].dt.dayofyear - 1) /
+        (df['datetime'].dt.is_leap_year.replace({True: 366, False: 365}))
+    )
+    return df
+
 def get_ydsines(yearday):
     """ For adding seasonal variable in Training_RandomForest.ipynb"""
     yearday = yearday%365.25
