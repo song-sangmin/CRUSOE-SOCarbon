@@ -26,6 +26,7 @@ def ytd2datetime(num, ref_time):
     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
 
 def add_decimalyr(df):
+    df = df.copy()
     df['datetime'] = pd.to_datetime(df['datetime'])
     df['decimalyr'] = (
         df['datetime'].dt.year +

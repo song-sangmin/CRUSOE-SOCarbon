@@ -246,10 +246,11 @@ def to_xr_dataset(argoDF, nc_attrs={'date':str(datetime.datetime.now())}):
     """ 
     Convert float Dataframe to Dataset, and assign title and source attributes.
     """
-    temp = xr.Dataset.from_dataframe(argoDF)
+    temp = xr.Dataset.from_dataframe(argoDF.set_index(["profid", 'pressure']))
     # argo_INDEX = temp.mean(dim='pressure')
 
-    argo_DS = temp.set_coords([ 'wmoid', 'datetime', 'yearday', 'latitude', 'longitude'])
+    # argo_DS = temp.set_coords([ 'wmoid', 'datetime', 'yearday', 'latitude', 'longitude'])
+    argo_DS = temp.set_coords([ 'profid', 'datetime', 'yearday', 'latitude', 'longitude'])
     argo_DS = argo_DS.assign_attrs(nc_attrs)
 
     return argo_DS

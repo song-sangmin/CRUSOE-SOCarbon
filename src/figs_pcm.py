@@ -15,11 +15,11 @@ gmm_palette = [
     "#332288",  # dark blue   
     "#CC6677",  # rose
     "#DDCC77",  # sand
-    "#44AA99",  # teal
-    "#117733",  # green
-    "#88CCEE",  # light blue
-    "#882255",   # wine
+    "#2E8783",  # teal
+    "#94235C",   # wine
     "#999933",  # olive
+    "#83DAFF", # light blue
+    "#11703E"  # green
 ]
 
 my_params = myplt.my_params(size=12, font_family='Futura', title_size=14)
@@ -29,8 +29,8 @@ matplotlib.rcParams.update(my_params)
 
 reload(myplt)
 reload(sopo)
-def sopolar_classes(class_locs, inds = range(8), 
-                    ax=None, figsize=(9,9), dotsize=0.5, markerscale=8,
+def sopolar_classes(class_locs, 
+                    ax=None, figsize=(9,9), dotsize=0.5, markerscale=8, dotalpha=0.5,
                     legend=True):
     """ 
     Single plot, all classes by color
@@ -44,9 +44,9 @@ def sopolar_classes(class_locs, inds = range(8),
 
     sopo.format_southpolar(ax)
 
-    for cl in inds:
-        ax.scatter(class_locs[cl].longitude, class_locs[cl].latitude, alpha=0.4, s=dotsize, 
-                    transform=ccrs.PlateCarree(), 
+    for cl in range(0, len(class_locs.keys())):
+        ax.scatter(class_locs[cl].longitude, class_locs[cl].latitude, alpha=dotalpha, s=dotsize, 
+                    transform=ccrs.PlateCarree(), zorder=20,
                     label=('' + str(cl+1)), c=gmm_palette[cl])
     
         ax.add_patch(sopo.fronts_patch('sie')) #sie
@@ -73,16 +73,18 @@ def sopolar_classes_paneled(class_locs, colorProbs=False, colorError=False, vlim
         sopo.format_southpolar(ax)
         sopo.add_frontlines(ax)
 
-    for ind, ax in enumerate(axs.flatten()):
-        knum = ind+1 #change to ind 
+    for ind, ax in enumerate(axs.flatten()[:len(class_locs.keys())]):
+        knum = ind # starts at 0
+        if str(list(class_locs.keys())[0]) == '1':
+            knum = ind + 1
         ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, 
-                   alpha=dotalpha, s=dotsize, 
-                   transform=ccrs.PlateCarree(), 
-                   label=('' + str(knum)), c=gmm_palette[ind])
+                alpha=dotalpha, s=dotsize, 
+                transform=ccrs.PlateCarree(), 
+                label=('' + str(knum)), c=gmm_palette[ind])
         if colorProbs:
             sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum].probability,
-               cmap=cmo.thermal, vmin=0, vmax=1,
-               alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
+            cmap=cmo.thermal, vmin=0, vmax=1,
+            alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
         elif colorError:
             sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum].val_error,
                 cmap='RdBu', vmin=-vlim, vmax=vlim,
@@ -126,18 +128,19 @@ def mean_tracer_profiles(classDS, var='CT',
     ax.invert_yaxis()
 
 def mean_tracer_profiles_paneled(class_data, vars=['CT', 'SA'],
-                                 figsize=(15,7)):
+                                 figsize=(15,7), numpanels = [2,6]):
     """ 
     Paneled by class
     Use mean_tracer_profiles to plot CT and SA for each class
     """
-    fig, axs = plt.subplots(2,8, figsize=figsize, layout='tight', sharey=True)
-    for ind, ax in enumerate(axs.flatten()[:8]):
+    fig, axs = plt.subplots(numpanels[0], numpanels[1], figsize=figsize, layout='tight', sharey=True)
+
+    for ind, ax in enumerate(axs.flatten()[:numpanels[1]]):
         mean_tracer_profiles(class_data[ind], var=vars[0], 
                              ax=ax, shadecolor=gmm_palette[ind])
         ax.set_title('Class ' + str(ind+1) + ' ' + vars[0], fontsize=14)
 
-    for ind, ax in enumerate(axs.flatten()[8:]):
+    for ind, ax in enumerate(axs.flatten()[numpanels[1]:]):
         mean_tracer_profiles(class_data[ind], var=vars[1], 
                              ax=ax, shadecolor=gmm_palette[ind])
         ax.set_title('Class ' + str(ind+1) + ' ' + vars[1], fontsize=14)

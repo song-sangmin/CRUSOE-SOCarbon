@@ -1,5 +1,8 @@
 # os tools
 
+
+# % load_ext autoreload
+# % autoreload 2 
 import os.path
 import numpy                 as np
 import pandas                as pd
@@ -29,7 +32,7 @@ import gsw
 
 def my_params(size=12, font_family='Futura', title_size = 14):
     """ 
-    Use: plt.rcParams.update(crplot.my_params(size=16))
+    Use: plt.rcParams.update(mod_plot.my_params(size=16))
     """
     plt.style.use('default')
     params = {'legend.fontsize': size, 
