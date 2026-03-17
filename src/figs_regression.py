@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.colors     as mpcolors
 import cartopy.crs as ccrs
+import numpy as np
+import scipy as scipy
 
 import mod_plotting as mod_plot
 import mod_regression as mod_reg
@@ -10,7 +12,42 @@ import figs_pcm
 from scipy import stats
 from mod_ocean import expand_datetime
 
-def singleRun_error_boxplot(singleRun, byClass = False, ax=None, 
+def error_kde(data, ax=None, textsize=14, ymax=None, pltcolor='r', 
+              linelabel='', linestyle='solid', linealpha = 0.7, lw=2):
+    """
+    New KDE plot using all combined validation errors from K-Fold 
+    @param:     data       list of errors
+
+    """ 
+
+    if ax == None:
+        fig  = plt.figure(figsize=(6,4), tight_layout=True)
+        ax = plt.gca()
+
+    # Add Gaussian KDE to estimate probability density function
+    x = np.linspace(data.min(), data.max(), 1000)
+    kde = scipy.stats.gaussian_kde(data)
+
+    ls = linestyle
+    den = ax.plot(x, kde(x), color=pltcolor, linewidth=lw, linestyle=ls, alpha=0.6, label=linelabel)
+
+    if ymax != None:
+        ax.set_ylim([0, ymax])
+
+    sns.set_palette('Dark2')
+    ax.grid(alpha=0.5, zorder=1)
+    ax.axvline(x=0, color='k', linestyle='dotted', linewidth=1.5, alpha=linealpha, zorder=0)
+
+    if len(linelabel)>0:
+        leg = ax.legend(fontsize=14, framealpha=1)
+        # for legobj in leg.legend_Handles:
+        #     legobj.set_linewidth(3.5)
+
+    return ax
+
+
+
+def singleRun_error_boxplot(singleRun, byClass = False, error_var = 'val_error', ax=None, 
                             xlims=None, lw=1, boxcolor='green'):
     """ 
     note: used to be plot_singlerun_errors
@@ -22,25 +59,33 @@ def singleRun_error_boxplot(singleRun, byClass = False, ax=None,
     if byClass: # multiple boxplots, one per class
         if ax is None:
             fig = plt.figure(figsize=(7,5)); ax = fig.gca()
-
+        
         plot_data = {}
-        for k in range(1,len(singleRun.ind_list)+1):
-            plot_data[k] = singleRun.DF_err[k].val_error.values
+        errors_dict = {int(k):df for k, df in singleRun.weighted_validation.groupby('cluster')}
+        # bplot_dict = {int(k):df for k, df in singleRun.weighted_validation.groupby('cluster')}
+
+        for k in singleRun.ind_list:
+            plot_data[int(k)] = errors_dict[k][error_var].dropna().values
+
         bplot = ax.boxplot(plot_data.values(),
                     widths=0.65, vert=False, patch_artist=True,
                     medianprops = {'color':'k', 'linewidth':lw},
                     capprops= {'color':'k', 'linewidth':lw},
-                    flierprops= {'color':'k', 'marker':'|', 'linewidth':lw, 'alpha':0.6, 'zorder':1},
+                    flierprops= {'color':'k', 'marker':'|', 'linewidth':lw, 'alpha':0, 'zorder':1},
                     boxprops = {'color':'k', 'linewidth':lw})
-        # for patch, color in zip(bplot['boxes'], boxcolor):
+        
+        for patch in bplot['boxes']:
+            patch.set_facecolor(boxcolor)
+            patch.set_alpha(0.6)
+        # for patch, color in zip(bplot, np.tile(boxcolor, len(singleRun.ind_list))):
         #     patch.set_facecolor(mpcolors.to_rgba(color, alpha=0.4))
 
     else: # single boxplot, all classes combined
         if ax is None:
             fig = plt.figure(figsize=(7,2)); ax = fig.gca()
     
-        plot_data = pd.concat([singleRun.DF_err[x] for x in range(1,len(singleRun.ind_list)+1)], axis=0)
-        bplot = ax.boxplot(plot_data.val_error.values,
+        # plot_data = pd.concat([singleRun.weighted_validation[x] for x in range(1,len(singleRun.ind_list)+1)], axis=0)
+        bplot = ax.boxplot(singleRun.weighted_validation[error_var].values,
                     widths=0.65, vert=False, patch_artist=True,
                     medianprops = {'color':'k', 'linewidth':lw},
                     capprops= {'color':'k', 'linewidth':lw},
@@ -57,7 +102,7 @@ def singleRun_error_boxplot(singleRun, byClass = False, ax=None,
     return ax
 
 
-def singleRun_error_kde(singleRun, byClass=False, ax=None, xlim=50):
+def singleRun_error_kde(singleRun, byClass=False, error_var = 'val_error', ax=None, xlim=50, linecolor = 'k', linelabel='combined'):
     """ 
     Plot error KDE for a single model run 
     @param     singleRun: ModelVersion object with ind_list corresponding to class number
@@ -68,26 +113,27 @@ def singleRun_error_kde(singleRun, byClass=False, ax=None, xlim=50):
         ax = fig.gca()
         
     if byClass:
-        errors_dict = {k:df for k, df in singleRun.weighted_validation.groupby('cluster')}
+        errors_dict = {int(k):df for k, df in singleRun.weighted_validation.groupby('cluster')}
         # Add all the models, overlaid
+        # print('temp')
         plot_data = {k:None for k in singleRun.ind_list}
         for k in singleRun.ind_list:
             # plot_data[k] = singleRun.DF_err[k].val_error.values
-            plot_data[k] = errors_dict[k].val_error.dropna().values
+            plot_data[k] = errors_dict[k][error_var].dropna().values
 
         colors = sns.color_palette("Dark2", n_colors=10)
         for ind, k in enumerate(singleRun.ind_list):
-            mod_plot.error_kde(plot_data[k], ax=ax, linelabel='class'+str(k), 
+            error_kde(plot_data[k], ax=ax, linelabel='Cluster'+str(k), 
                             pltcolor=colors[ind], linestyle='solid')
         ax.legend(fontsize=12, loc='right')
 
     ax.set_xlim([-xlim, xlim])
 
     # Add the overall 
-    plot_data_comb = singleRun.weighted_validation.val_error.values
+    plot_data_comb = singleRun.weighted_validation[error_var].values
     sns.set_palette('Dark2')
-    mod_plot.error_kde(plot_data_comb, ax=ax, linelabel='combined', pltcolor='k', linestyle='solid')
-    # mod_plot.error_kde(plot_data[run_tag], ax=ax, linelabel=run_tag)
+    error_kde(plot_data_comb, ax=ax, linelabel=linelabel, pltcolor=linecolor, linestyle='solid')
+    # error_kde(plot_data[run_tag], ax=ax, linelabel=run_tag)
 
     return ax
 
@@ -113,7 +159,7 @@ def storedRuns_error_kde(storedRuns, ax=None, xlim=50, show_legend=True):
     # run_tag = run_tags[0]
     # fig = plt.figure(figsize=(12,6))
     # ax = fig.gca()
-    # mod_plot.error_kde(plot_data[run_tag], ax=ax, linelabel=run_tag)
+    # error_kde(plot_data[run_tag], ax=ax, linelabel=run_tag)
 
     # Add all the rest
     colors = sns.color_palette("Dark2", n_colors=len(run_tags))
@@ -123,11 +169,11 @@ def storedRuns_error_kde(storedRuns, ax=None, xlim=50, show_legend=True):
         else: ls= 'solid'
 
         if show_legend:
-            mod_plot.error_kde(plot_data[run_tag], ax=ax, 
+            error_kde(plot_data[run_tag], ax=ax, 
                             linelabel=run_tag.replace('-delta_pco2',''), 
                             pltcolor=colors[ind], linestyle=ls)
         else:
-            mod_plot.error_kde(plot_data[run_tag], ax=ax, 
+            error_kde(plot_data[run_tag], ax=ax, 
                             pltcolor=colors[ind], linestyle=ls)
 
     ax.legend(fontsize=12, loc='right')
@@ -144,9 +190,12 @@ def storedRuns_error_kde(storedRuns, ax=None, xlim=50, show_legend=True):
 # %% Monthly distributions
 
 
-def error_histplot_paneled_monthly(error_sets=[], axs=None, nbins=30, stat_type='frequency', zero_line=True, error_lim = 100, colors=None, alphas=[]):
+def error_histplot_paneled_monthly(error_sets=[], axs=None, figsize = (18,9), 
+                                   nbins=30, binwidth = None, error_param = 'val_error',
+                                stat_type='frequency', 
+                                zero_line=True, error_lim = 100, colors=None, alphas=[]):
     if axs is None:
-        fig, axs = plt.subplots(3,4, figsize=(18,9), layout='tight', sharex='col')
+        fig, axs = plt.subplots(3,4, figsize=figsize, layout='constrained', sharex='col', sharey='row')
         axs = axs.flatten()
 
     if colors is None: colors = ['skyblue', 'orange', 'purple']
@@ -162,40 +211,47 @@ def error_histplot_paneled_monthly(error_sets=[], axs=None, nbins=30, stat_type=
             # make sure dataframe has month
             # valDF = expand_datetime(valDF, type='dataframe')
             plot_data = valDF[valDF.month == monthnum]
-            sns.histplot(plot_data['val_error'], bins=nbins, kde=True, stat=stat_type, ax=ax, color=colors[ind], alpha=alphas[ind])
-            
+
+            if binwidth is None:
+                sns.histplot(plot_data[error_param], bins=nbins, kde=True, stat=stat_type, ax=ax, color=colors[ind], alpha=alphas[ind])
+            else:
+                sns.histplot(plot_data[error_param], binwidth=binwidth, kde=True, stat=stat_type, ax=ax, color=colors[ind], alpha=alphas[ind])
+            # ax.hist(plot_data['val_error'], bins=nbins)
+            # error_kde(plot_data['val_error'], ax=ax, pltcolor=colors[ind], linestyle='solid', linelabel=None, linealpha=alphas[ind])
         
-        ax.set_title(monthlist[monthnum-1], fontsize=14)
+        ax.set_title(monthlist[monthnum-1], fontsize=24)
 
     
     for ax in axs.flatten():
         if zero_line:
             upperlim = ax.get_ylim()[1]
-            ax.vlines(0, ymin=0, ymax=upperlim, colors='r', linewidth=2, linestyles='dashed', alpha=0.6)
+            ax.vlines(0, ymin=0, ymax=upperlim, colors='k', linewidth=2, linestyles='dashed', alpha=0.6)
             ax.set_ylim([0, upperlim])
         ax.set_xlim([-error_lim,error_lim])
         ax.grid(linestyle='--', alpha=0.5, zorder=0)
 
     return fig, axs
 
-def plot_decile_calibration(ax, cal_pred, cal_obs, title, stat_var='mean'):
+def plot_decile_calibration(ax, cal_pred, cal_obs, title, stat_var='mean', axlims = [-65, 15]):
 # def plot_decile_calibration(ax, valerrorDF, run_tag):
     # valerrorDF = storedRuns_weighted[run_tag].weighted_validation
     # valerrorDF['n_decile'] = pd.qcut(valerrorDF['weighted_pred'], 10, labels=list(range(1, 11))) #
     # cal_pred = valerrorDF.groupby('n_decile')['weighted_pred'].agg(['mean', 'min', 'max', 'count'])
     # cal_obs = valerrorDF.groupby('n_decile')['delta_pco2'].agg(['mean', 'min', 'max', 'count'])
-
-    ax.scatter(cal_pred[stat_var].values, cal_obs[stat_var].values, color='blue', s=30, label='decile means')
-    ax.plot([-100,100], [-100,100], color='black', linestyle='--', alpha=0.5, zorder=1)
+    ax.set_aspect('equal')
+    ax.scatter(cal_pred[stat_var].values, cal_obs[stat_var].values, color='k', s=30) #, label='decile means')
+    ax.plot([-1000,1000], [-1000,1000], color='black', linestyle='--', alpha=0.5, zorder=1)
     ax.grid(True, linestyle='--', alpha=0.5, zorder=0)
-    ax.vlines(x=0, ymin=-65, ymax=15, colors='gray', linestyles='-', alpha=0.5)
-    ax.hlines(y=0, xmin=-65, xmax=15, colors='gray', linestyles='-', alpha=0.5)
-    ax.set_xlim([-65,15])
-    ax.set_ylim([-65,15])
+
+    # axlims = [-65, 15]
+    ax.vlines(x=0, ymin=axlims[0], ymax=axlims[1], colors='gray', linestyles='-', alpha=0.5)
+    ax.hlines(y=0, xmin=axlims[0], xmax=axlims[1], colors='gray', linestyles='-', alpha=0.5)
+    ax.set_xlim(axlims)
+    ax.set_ylim(axlims)
 
     ax.set_title(title) #[4:])
-    ax.set_xlabel('estimated')
-    ax.set_ylabel('observed')
+    ax.set_xlabel('Estimated')
+    ax.set_ylabel('Observed')
     
     lincal = stats.linregress(cal_pred[stat_var].values, cal_obs[stat_var].values)
 

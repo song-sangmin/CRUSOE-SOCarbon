@@ -11,15 +11,49 @@ import mod_ocean
 import gsw
 
 # def print_dict_counts(plat_dict):
+# %% miscellaneous useful
 
-# %% 2.0_process_pco2_data
+def match_profid_from_datetag(soccomDF, floatINDEX):
+    """ 
+    used to be assign_profid_from_datetag
+    Match SOCCOM 20m averages with profid from bgcINDEX or coreINDEX 
+    since these are from another source 
+    @param      soccomDF with a prof_datetag column
+                floatINDEX has coordinated 'profid'
+    
+    """
+    # Add prof_datetag to the dataset for matching
+    finder_index = index_by_prof_datetag(floatINDEX.to_dataframe())
+
+    # soccomDF = soccomDF.reset_index() #set_index('prof_datetag')
+    soccomDF['profid'] = soccomDF['prof_datetag'].apply(lambda x: finder_index.loc[str(x)]['profid'] if x in finder_index.index.tolist() else np.nan)
+    soccomDF = soccomDF.dropna(subset=['profid']).copy()
+    soccomDF.set_index('profid', inplace=True)
+
+    return soccomDF
+
+def add_datetag_from_profid(platDF, floatINDEX):
+    datetag_finder = index_by_prof_datetag(floatINDEX.to_dataframe()).reset_index().set_index('profid')
+    platDF['prof_datetag'] = platDF['profid'].apply(lambda x: datetag_finder.loc[str(x)]['prof_datetag'] if str(x) in datetag_finder.index.tolist() else np.nan)
+
+
+def index_by_prof_datetag(platDF):
+    """ 
+    bgcINDEX is an xr dataset
+    make pd Dataframe indexed by prof_datetag so you can assign consistent profids to soccom 20m aves"""
+    # finder = bgcINDEX.to_dataframe().reset_index()
+    finder = platDF.reset_index()
+    finder['datetime'] = finder['datetime'].astype('datetime64[ns]')
+    finder['prof_datetag'] = finder['profid'].apply(lambda x: str(x).split('_')[0])
+    finder['prof_datetag'] = finder.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
+    finder_index = finder.reset_index().groupby('prof_datetag').first()
+
+    return finder_index
 
 def add_mixedlayer_pressure(platINDEX, platDS):
     """ Originally from 2.0_process_pco2_data
-    
-    
     """
-    # # Calculate mixed layer pressure 
+    # Calculate mixed layer pressure 
     plat_mlps, no_data = mod_argo.calc_mlp(platDS, threshold=0.03)
     plat_mlps['mld'] = gsw.z_from_p(plat_mlps.mlp.values, platINDEX.sel(profid=plat_mlps.index).latitude.values)
 
@@ -27,22 +61,20 @@ def add_mixedlayer_pressure(platINDEX, platDS):
     platINDEX = platINDEX.sel(profid=plat_mlps.index)
     platDS = platDS.sel(profid=plat_mlps.index)
 
-    # Add mixed layer depth (mld)
     platINDEX['mld']= -xr.DataArray(plat_mlps.mld.values, dims='profid') # Notice negative
     platDS['mld']= -xr.DataArray(plat_mlps.mld.values, dims='profid') # Notice negative
-
-    # Add mixed layer pressure (mlp)
     platINDEX['mlp'] = xr.DataArray(plat_mlps.mlp.values, dims='profid')
     platDS['mlp'] = xr.DataArray(plat_mlps.mlp.values, dims='profid')
 
     return platINDEX, platDS
 
-# %% ADD TARGET VARIABLE FOR ML INPUTS (delta-pco2)
+# %% P1-processed : Making pd Dataframes ready for regression
+
+# ADD TARGET VARIABLE FOR ML INPUTS (delta-pco2)
 # Within 2.0 Preprocessing we run:
     # shipDF = mod_prep.add_regression_time_vars(shipDF)
     # shipDF = mod_prep.add_regression_carbon_vars(shipDF, convert_pco2=True) 
     # shipDF['delta_pco2'] = shipDF['pco2_ocean'] - shipDF['pco2_atmos']
-
 
 def add_regression_time_vars(platDF):
     # Add new time variables
@@ -56,8 +88,12 @@ def add_regression_time_vars(platDF):
 def add_regression_carbon_vars(platDF, convert_pco2=True): # , make_delta = True):
     """ Add marine boundary layer xCO2 (ppm) to dataset
     """
+    if 'lon_round' not in platDF.columns:
+            platDF['lon_round'] = round((platDF['longitude'] + 180)/2.5)*2.5
+            platDF['lat_round'] = round(platDF['latitude']/2.5)*2.5
+
     if 'atmos_pres_atm' not in platDF.columns:
-        platDF['atmos_pres_Pa'] = platDF.apply(lambda row: nearest_slp(row), axis=1)
+        platDF['atmos_pres_Pa'] = platDF.apply(lambda row: get_row_sealevelpressure(row), axis=1)
         platDF['atmos_pres_atm'] = platDF['atmos_pres_Pa'] / 1013.25 / 100
 
     if 'decimalyr' not in platDF.columns:
@@ -75,7 +111,7 @@ def add_regression_carbon_vars(platDF, convert_pco2=True): # , make_delta = True
 
     return platDF
 
-
+# %% ATMOSPHERIC AND OCEANIC CARBON VARS
 # Add target variable
 def get_row_atmos_co2_ppm(row):
     mbl_co2 = xr.open_dataset('../data/marineboundarylayer/co2_mbl_2014-2023_dataset_combined.nc')
@@ -88,6 +124,7 @@ def get_row_atmos_co2_ppm(row):
 
 def get_row_atmos_vapor_pres(row):
     """ used in marine boundary layer xCO2 (ppm) to pco2 (uatm) conversion 
+    Requires data to have sst and sss 
     Zeebe and Wolf-Gladrow 2001
     """
     sst_kelvin = row.sst + 273.15
@@ -98,15 +135,18 @@ def get_row_atmos_vapor_pres(row):
     vapor_pres = np.exp(ln_vapor_pres)
     return vapor_pres
 
-def nearest_slp(row):
-        # Add atmospheric pressure from NCEP sea level pressure data
-        # Needed for conversion from fco2 to pco2
-        # Returns values in Pascals (divide by 101325 to get to atm)
-        year = row.datetime.year
-        filepath = '/Volumes/crusoe-repo/data/ncep_slp/'
-        ncep_sea_level_pressure = xr.open_dataset(filepath + 'slp.' + str(year) + '.nc')
-        return ncep_sea_level_pressure.sel(lon=row.lon_round, lat=row.lat_round, time = row.datetime,
-                            method='nearest')['slp'].values.tolist()
+def get_row_sealevelpressure(row):
+    # used to be nearest_slp(row)
+    # Add atmospheric pressure from NCEP sea level pressure data
+    # Needed for conversion from fco2 to pco2
+    # Returns values in Pascals (divide by 101325 to get to atm)
+    year = row.datetime.year
+    filepath = '/Volumes/crusoe-repo/data/ncep_slp/'
+    ncep_sea_level_pressure = xr.open_dataset(filepath + 'slp.' + str(year) + '.nc')
+
+    atmos_pres_Pa = ncep_sea_level_pressure.sel(lon=row.lon_round, lat=row.lat_round, time = row.datetime,
+                        method='nearest')['slp'].values.tolist()
+    return atmos_pres_Pa
 
 
 def convert_co2_ppm_to_pco2(platDF, ppm_col='atmos_co2_ppm'):
@@ -124,13 +164,18 @@ def convert_co2_ppm_to_pco2(platDF, ppm_col='atmos_co2_ppm'):
 # %% SOCAT FUNCTIONS (2.0)
 
 
-def convert_socat_fco2(socatDS):
+def convert_socat_fco2(socatDF):
     """ 
     Convert socat fCO2 to pCO2 using atmospheric pressure from NCEP sea level pressure data
-    socatDS: xarray Dataset of SOCAT with 'expoID'
+    # socatDS: xarray Dataset of SOCAT with 'expoID'
+    socatDF: in 2.0 preprocessing use colocation DF from 0.5_
     """
-    socatDF = socatDS.to_dataframe()
+    # socatDF = socatDS.to_dataframe()
     socatDF['datetime'] = socatDF.datetime.astype('datetime64[ns]')
+
+    # Calculate SA, CT for vapor pressure
+    socatDF['SA'] = gsw.SA_from_SP(socatDF['sal'],  (np.tile(0, len(socatDF))), socatDF['longitude'], socatDF['latitude'])
+    socatDF['CT'] = gsw.CT_from_t(socatDF['SA'], socatDF['sst'], (np.tile(0, len(socatDF))))
 
     # add 
     socatDF['lon_round'] = round((socatDF['longitude'] + 180)/2.5)*2.5
@@ -142,7 +187,7 @@ def convert_socat_fco2(socatDS):
 
 
     # ncep_sea_level_pressure = xr.open_dataset('/Users/sangminsong/Downloads/slp.2023.nc')
-    socatDF['atmos_pres_Pa'] = socatDF.apply(lambda row: nearest_slp(row), axis=1)
+    socatDF['atmos_pres_Pa'] = socatDF.apply(lambda row: get_row_sealevelpressure(row), axis=1)
     socatDF['atmos_pres_atm'] = socatDF['atmos_pres_Pa'] / 1013.25 / 100
 
     # Convert fco2 to pco2
@@ -160,7 +205,7 @@ def convert_socat_fco2(socatDS):
 
 # %% SOCCOM 20m AVE PROCESSING FUNCTIONS
 
-def process_soccom_20m_clusters(bgcDS, use_var='pCO2_pHbias5_pK1', start_date = '2013-12-31', end_date = '2023-12-31'): #, use_cols=None):
+def process_soccom_20m_averages(start_date = '2013-12-31', end_date = '2023-12-31', use_var='pCO2_pHbias5_pK1'): #, use_cols=None):
     """ 
     Select which variable (carbon correction) to use from the 20m averages
     Fills in missing clusters
@@ -168,56 +213,168 @@ def process_soccom_20m_clusters(bgcDS, use_var='pCO2_pHbias5_pK1', start_date = 
     
     """
     soccom_df = loader.import_soccom_20m_averages(processed=False, start_date=start_date, end_date=end_date)
-
-    # from core clustered data
-    bgcClasses = bgcDS.to_dataframe().reset_index()
-    bgcClasses['prof_datetag'] = bgcClasses['profid'].apply(lambda x: str(x).split('_')[0])
-    bgcClasses['prof_datetag'] = bgcClasses.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
-    bgcClasses_index = bgcClasses.reset_index().groupby('prof_datetag').first()
-    bgcClasses_index
-
-    # Assign clusters by comparison to bgcINDEX classes
-    soccom_df['cluster'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['cluster'] if x in bgcClasses_index.index.tolist() else np.nan)
-
-    # Assign profid that corresponds to the bgcINDEX using the WMO number and date (prof_datetag)
-    soccom_df['profid'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['profid'] if x in bgcClasses_index.index.tolist() else np.nan)
-
-    print('Clusters assigned.')
-
-    # Fill in missing  cluster values where we can -- 
-    # look for same float, profiles within +/- 11 days
-    # If cluster was same before and after, assign to that cluster
-    soccom_df_filled = soccom_df.set_index('prof_datetag')
-    missing = soccom_df[soccom_df.cluster.isna()]
-    clustered_datetags = bgcClasses_index.reset_index().prof_datetag.unique()
-    print('Initially missing clusters for ' + str(len(missing)) + ' profiles, filling in ==>')
-
-    profsReplaced = []
-    # for ind in range(len(missing)):
-    for ind, tag in enumerate(missing.prof_datetag.unique()):
-        obs = missing.iloc[ind, :]
-        inds = [x for x in clustered_datetags if x.startswith(obs.wmoid)]
-        findDF = soccom_df.reset_index()
-        same_float = findDF[findDF.prof_datetag.isin(inds)].copy()
-
-        if len(same_float)>0:
-            same_float.loc[:,'timediff'] = same_float.apply(lambda row: abs((row.datetime - obs.datetime).days), axis=1)
-            valid = same_float[same_float.timediff<12]
-            if valid.cluster.nunique() == 1:
-                soccom_df_filled.loc[tag, 'cluster'] = valid.cluster.values[0]
-                profsReplaced = profsReplaced + [tag]
-
-    print('Filled in ' + str(len(profsReplaced)) + ' missing clusters using adjacent profiles')
-    soccom_df_filled = soccom_df_filled.rename(columns={'Lat':'latitude', 'Lon':'longitude',
+    soccom_df = soccom_df.rename(columns={'Lat':'latitude', 'Lon':'longitude',
                         'MLD':'mld', 'Absolute_Salinity':'SA', 'ConservTemp':'CT'})
+    
+    if 'lon_round' not in soccom_df.columns: # for slp
+        soccom_df['lon_round'] = round((soccom_df['longitude'] + 180)/2.5)*2.5
+        soccom_df['lat_round'] = round(soccom_df['latitude']/2.5)*2.5
+    soccom_df['atmos_pres_Pa'] = soccom_df.apply(lambda row: get_row_sealevelpressure(row), axis=1)
+    soccom_df['atmos_pres_atm'] = soccom_df['atmos_pres_Pa'] / 1013.25 / 100
 
-    # Add sea level pressure 
-    soccom_df_filled['lon_round'] = round((soccom_df_filled['longitude'] + 180)/2.5)*2.5
-    soccom_df_filled['lat_round'] = round(soccom_df_filled['latitude']/2.5)*2.5
-    soccom_df_filled['atmos_pres_Pa'] = soccom_df_filled.apply(lambda row: nearest_slp(row), axis=1)
-    soccom_df_filled['atmos_pres_atm'] = soccom_df_filled['atmos_pres_Pa'] / 1013.25 / 100
+    print('Imported SOCCOM pCO2 data using variable ' + use_var)
+    soccom_df['pco2_ocean'] = soccom_df[use_var]
 
-    return soccom_df_filled
+    # soccom_df['prof_datetag'] = soccom_df['profid'].apply(lambda x: str(x).split('_')[0])
+    # bgcClasses['prof_datetag'] = bgcClasses.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
+    # bgcClasses_index = bgcClasses.reset_index().groupby('prof_datetag').first()
+
+    # bgcClasses_index
+
+
+    return soccom_df
+
+
+# def assign_soccom_20m_clusters(soccom_df, clusteredDS):
+#     """  used to be within the process_soccom_20m_clusters function 
+#      use with clusteredDS after running PCM 
+#      clusteredDS should already have mld, adt, atmospheric pco2 added to it. 
+#     """
+#     # from core clustered data
+#     # bgcClasses = clusteredDS.to_dataframe().reset_index()
+#     # bgcClasses['prof_datetag'] = bgcClasses['profid'].apply(lambda x: str(x).split('_')[0])
+#     # bgcClasses['prof_datetag'] = bgcClasses.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
+#     # bgcClasses_index = bgcClasses.reset_index().groupby('prof_datetag').first()
+#     bgcClasses_index = get_index_prof_datetag(clusteredDS.to_dataframe().reset_index())
+
+#     # Assign clusters by comparison to bgcINDEX classes
+#     soccom_df['cluster'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['cluster'] if x in bgcClasses_index.index.tolist() else np.nan)
+
+#     # Assign profid that corresponds to the bgcINDEX using the WMO number and date (prof_datetag)
+#     soccom_df['profid'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['profid'] if x in bgcClasses_index.index.tolist() else np.nan)
+
+#     print('Clusters assigned.')
+
+#     # Fill in missing  cluster values where we can -- 
+#     # look for same float, profiles within +/- 11 days
+#     # If cluster was same before and after, assign to that cluster
+#     soccom_df_filled = soccom_df.set_index('prof_datetag')
+#     missing = soccom_df[soccom_df.cluster.isna()]
+#     clustered_datetags = bgcClasses_index.reset_index().prof_datetag.unique()
+#     print('Initially missing clusters for ' + str(len(missing)) + ' profiles, filling in ==>')
+
+#     profsReplaced = []
+#     # for ind in range(len(missing)):
+#     for ind, tag in enumerate(missing.prof_datetag.unique()):
+#         obs = missing.iloc[ind, :]
+#         inds = [x for x in clustered_datetags if x.startswith(obs.wmoid)]
+#         findDF = soccom_df.reset_index()
+#         same_float = findDF[findDF.prof_datetag.isin(inds)].copy()
+
+#         if len(same_float)>0:
+#             same_float.loc[:,'timediff'] = same_float.apply(lambda row: abs((row.datetime - obs.datetime).days), axis=1)
+#             valid = same_float[same_float.timediff<12]
+#             if valid.cluster.nunique() == 1:
+#                 soccom_df_filled.loc[tag, 'cluster'] = valid.cluster.values[0]
+#                 profsReplaced = profsReplaced + [tag]
+
+#     print('Filled in ' + str(len(profsReplaced)) + ' missing clusters using adjacent profiles')
+    
+
+#     # # Add sea level pressure 
+#     # soccom_df_filled['lon_round'] = round((soccom_df_filled['longitude'] + 180)/2.5)*2.5
+#     # soccom_df_filled['lat_round'] = round(soccom_df_filled['latitude']/2.5)*2.5
+#     # soccom_df_filled['atmos_pres_Pa'] = soccom_df_filled.apply(lambda row: get_row_sealevelpressure(row), axis=1)
+#     # soccom_df_filled['atmos_pres_atm'] = soccom_df_filled['atmos_pres_Pa'] / 1013.25 / 100
+
+#     return soccom_df_filled
+
+
+# %% SATELLITE ADT
+
+def add_satellite_adt(platDF, year_range = range(2014,2024)):
+    adt_dict = {k:None for k in year_range}
+    for open_yr in adt_dict.keys():
+        folder = '/Volumes/crusoe-repo/data/copernicusmarine/' # used to be in OneDrive/Code/CRUSOE
+        filepath = ('cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D_adt-sla_179.94W-179.94E_88.94S-35.06S_' + str(open_yr) + '-01-01-' + str(open_yr) + '-12-31.nc')
+        adt_dict[open_yr] = xr.open_dataset(folder + filepath)
+
+    platDF =  mod_ocean.expand_datetime(platDF, type='dataframe')
+    platDF_annual = {k:df for k, df in platDF.groupby('year')}
+    for yr in year_range:
+        adt_data = adt_dict[yr]
+        temp = platDF_annual[yr].copy()
+        temp['adt'] =  temp.apply(lambda row: get_row_adt(row, adt_data), axis=1)
+        platDF_annual[yr] = temp
+    platDF_added = pd.concat(platDF_annual.values(), axis=0)
+
+    return platDF_added
+
+def get_row_adt(row, adt_year_data):
+    return adt_year_data.sel(time=row.datetime, latitude=row.latitude, longitude=row.longitude, 
+                        method='nearest').adt.values.tolist()
+
+
+# OLD
+# def process_soccom_20m_clusters(bgcDS, use_var='pCO2_pHbias5_pK1', start_date = '2013-12-31', end_date = '2023-12-31'): #, use_cols=None):
+#     """ 
+#     Select which variable (carbon correction) to use from the 20m averages
+#     Fills in missing clusters
+#     Uses NCEP sea level pressure to assign atmospheric pressure (in Pa and in uatm)
+    
+#     """
+#     soccom_df = loader.import_soccom_20m_averages(processed=False, start_date=start_date, end_date=end_date)
+
+#     # from core clustered data
+#     bgcClasses = bgcDS.to_dataframe().reset_index()
+#     bgcClasses['prof_datetag'] = bgcClasses['profid'].apply(lambda x: str(x).split('_')[0])
+#     bgcClasses['prof_datetag'] = bgcClasses.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
+#     bgcClasses_index = bgcClasses.reset_index().groupby('prof_datetag').first()
+#     bgcClasses_index
+
+#     # Assign clusters by comparison to bgcINDEX classes
+#     soccom_df['cluster'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['cluster'] if x in bgcClasses_index.index.tolist() else np.nan)
+
+#     # Assign profid that corresponds to the bgcINDEX using the WMO number and date (prof_datetag)
+#     soccom_df['profid'] = soccom_df['prof_datetag'].apply(lambda x: bgcClasses_index.loc[str(x)]['profid'] if x in bgcClasses_index.index.tolist() else np.nan)
+
+#     print('Clusters assigned.')
+
+#     # Fill in missing  cluster values where we can -- 
+#     # look for same float, profiles within +/- 11 days
+#     # If cluster was same before and after, assign to that cluster
+#     soccom_df_filled = soccom_df.set_index('prof_datetag')
+#     missing = soccom_df[soccom_df.cluster.isna()]
+#     clustered_datetags = bgcClasses_index.reset_index().prof_datetag.unique()
+#     print('Initially missing clusters for ' + str(len(missing)) + ' profiles, filling in ==>')
+
+#     profsReplaced = []
+#     # for ind in range(len(missing)):
+#     for ind, tag in enumerate(missing.prof_datetag.unique()):
+#         obs = missing.iloc[ind, :]
+#         inds = [x for x in clustered_datetags if x.startswith(obs.wmoid)]
+#         findDF = soccom_df.reset_index()
+#         same_float = findDF[findDF.prof_datetag.isin(inds)].copy()
+
+#         if len(same_float)>0:
+#             same_float.loc[:,'timediff'] = same_float.apply(lambda row: abs((row.datetime - obs.datetime).days), axis=1)
+#             valid = same_float[same_float.timediff<12]
+#             if valid.cluster.nunique() == 1:
+#                 soccom_df_filled.loc[tag, 'cluster'] = valid.cluster.values[0]
+#                 profsReplaced = profsReplaced + [tag]
+
+#     print('Filled in ' + str(len(profsReplaced)) + ' missing clusters using adjacent profiles')
+#     soccom_df_filled = soccom_df_filled.rename(columns={'Lat':'latitude', 'Lon':'longitude',
+#                         'MLD':'mld', 'Absolute_Salinity':'SA', 'ConservTemp':'CT'})
+
+#     # Add sea level pressure 
+#     soccom_df_filled['lon_round'] = round((soccom_df_filled['longitude'] + 180)/2.5)*2.5
+#     soccom_df_filled['lat_round'] = round(soccom_df_filled['latitude']/2.5)*2.5
+#     soccom_df_filled['atmos_pres_Pa'] = soccom_df_filled.apply(lambda row: get_row_sealevelpressure(row), axis=1)
+#     soccom_df_filled['atmos_pres_atm'] = soccom_df_filled['atmos_pres_Pa'] / 1013.25 / 100
+
+#     return soccom_df_filled
+
 
 def datenum_to_datetime(matlab_datenum):
   days = matlab_datenum % 1

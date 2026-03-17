@@ -115,12 +115,16 @@ def run_pca_and_gmm(centered_coreDS, coreDS, coreINDEX, n_pca, n_gmm, dbar_limit
 
     Y_gmm = (pd.concat([Xtrans,
                     pd.Series(gmm.predict(Xtrans), name='class')], axis=1))
+    
     Y_gmm.set_index(pca_input.index, inplace=True) # set profid as index
+    Y_gmm['class'] = [x+1 for x in Y_gmm['class'].values] # add 1 to class labels to make them 1-indexed 
+    print('Re-indexed classes starting at class 1')
 
     # Use profids to separate out data by class
-    class_locs = {k:None for k in range(gmm.n_components)}
-    class_data = {k:None for k in range(gmm.n_components)}
-    for ind in range(gmm.n_components):
+    class_locs = {k:None for k in range(1, gmm.n_components+1)}
+    class_data = {k:None for k in range(1, gmm.n_components+1)}
+    for ind in range(1, gmm.n_components+1):
+        # note above that class labels are 0-indexed, so we add 1 to new class label
         class_locs[ind] = coreINDEX.sel(profid=[x for x in Y_gmm[Y_gmm['class']==ind].index.values])
         class_data[ind] = coreDS.sel(profid=[x for x in Y_gmm[Y_gmm['class']==ind].index.values])
 
@@ -129,7 +133,7 @@ def run_pca_and_gmm(centered_coreDS, coreDS, coreINDEX, n_pca, n_gmm, dbar_limit
     # == Print number of profiles by class
     print('Number of profiles by class')
     for k, v in class_locs.items():
-        print('class', k+1, ':', len(v.profid.values))
+        print('class', k, ':', len(v.profid.values))
     # len(class_locs[0].profid.values)
 
     return pca_input, Xtrans, pca_obj, PCdict, gmm, Y_gmm, class_locs, class_data
@@ -139,20 +143,173 @@ def calc_postprobs(gmm, Xtrain, Xtrans, Y_gmm, class_locs):
     """
     allprobs = pd.DataFrame(gmm.predict_proba(Xtrans))
     allprobs.set_index(Xtrain.index, inplace=True) 
+    allprobs.rename(columns={i: i+1 for i in range(gmm.n_components)}, inplace=True)
 
-    postprobs = {k:None for k in range(gmm.n_components)}
-    for ind in range(gmm.n_components):
+    postprobs = {k:None for k in range(1, gmm.n_components+1)}
+    for ind in range(1, gmm.n_components+1):
         postprobs[ind] = allprobs.loc[[x for x in Y_gmm[Y_gmm['class']==ind].index.values]]
 
     # Make dictionary of probabilities with locations for plotting
-    class_probs = {k:None for k in range(gmm.n_components)}
+    class_probs = {k:None for k in range(1, gmm.n_components+1)}
 
-    for ind in range(gmm.n_components):
+    for ind in range(1, gmm.n_components+1):
         temp = class_locs[ind].to_dataframe()
         temp['probability'] = postprobs[ind][ind].values
         class_probs[ind] = temp
     
     return allprobs, class_probs
+
+# %% To use for processing regression inputs / adding posterior probabilities
+
+def add_class_assignments(platDF, PCM_finder, n_gmm, profid_col='nearest_profid'):
+    """ 
+    
+    @param  profid_col: 'profid' for floatDF, 'nearest_profid' for shipDF 
+            PCM_finder: dataframe with profid as index and columns for each class probability and 'class_assign' for assigned class
+
+            [Y_gmm, allprobs] = loader.import_p2_clustered(pcm_params = pcm_params)
+            PCM_finder = allprobs.set_index('profid') # temp object to search
+            PCM_finder['class_assign'] = Y_gmm.loc[PCM_finder.index, 'class']
+
+    """
+    platDF = platDF.copy()
+    for k in range(1, n_gmm+1):
+        platDF['class' + str(k) + '_prob'] = platDF[profid_col].apply(lambda x: PCM_finder.loc[x, str(k)] if x in PCM_finder.index else np.nan)
+    platDF['class_assign'] = (platDF[profid_col].apply(lambda x: PCM_finder.loc[x, 'class_assign'] if x in PCM_finder.index else np.nan))
+    # platDF['prof_datetag'] = platDF['prof_datetag'].astype(str)
+
+    # platDF = platDF.dropna(subset=['class_assign'])
+    # print('Initial classes assigned. Filling missing values where adjacent classes match...')
+
+#     # Fill in missing  cluster values where we can -- 
+#     # look for same float, profiles within +/- 11 days
+#     # If cluster was same before and after, assign to that cluster
+
+    
+    return platDF
+
+def fill_missing_float_classes(argoDF, n_gmm, days_threshold = 12):
+    """ for soccom 20 m aves
+    indexed by profid 
+    doesn't work for shipDF yet"""
+    # argoDF['prof_datetag'] = argoDF['prof_datetag'].astype(str)
+    # argoDF['datetime'] = pd.to_datetime(argoDF['datetime'])
+
+    # argoDF = argoDF.set_index('profid')
+    argoDF_nona = argoDF.dropna(subset='class_assign')
+    missing = argoDF[argoDF.class_assign.isna()].reset_index()
+    available_prof_datetags = argoDF_nona.prof_datetag.unique().astype(str)
+    print('Initially missing class assignments for ' + str(len(missing)) + ' profiles, searching to fill with adjacent datetags...')
+
+    profsReplaced = []
+
+    for ind, tag in enumerate(missing.profid.unique()):
+        obs = missing.iloc[ind, :]
+        same_float = argoDF_nona[argoDF_nona.wmoid==obs.wmoid].copy()
+
+        if len(same_float)>0:
+            same_float.loc[:,'timediff'] = same_float.apply(lambda row: abs((row.datetime - (obs.datetime)).days), axis=1)
+            valid = same_float[same_float.timediff<days_threshold]
+            if valid.class_assign.nunique() == 1:
+
+
+                for k in range(1, n_gmm+1):
+                    argoDF.loc[tag,'class' + str(k) + '_prob'] = valid['class' + str(k) + '_prob'].values[0]
+                argoDF.loc[tag, 'class_assign'] = valid.class_assign.values[0]
+
+                profsReplaced = profsReplaced + [tag]
+
+    argoDF = argoDF.dropna(subset='class_assign')
+    print('Filled in ' + str(len(profsReplaced)) + ' missing assignments using adjacent profiles')
+    print('Total ' + str(len(argoDF)) + ' valid profiles')
+
+    return argoDF 
+
+def fill_missing_ship_classes(shipDF, n_gmm, days_threshold = 1.5):
+    missingClasses = shipDF[shipDF['class_assign'].isna()]  #.reset_index().set_index('sample_datetag')
+    samplesReplaced = []; 
+
+    for sdt, obs in missingClasses.iterrows(): # for sample_datetag, row ... 
+        same_cruise = shipDF[shipDF['cruiseid'] == obs.cruiseid].copy()
+
+        if len(same_cruise)>0:
+            same_cruise['timediff'] = same_cruise.apply(lambda row: abs((row.datetime - (obs.datetime)).days), axis=1)
+            valid = same_cruise[same_cruise.timediff<days_threshold].copy() 
+            # look for profiles within 1.5 days of each other (same day or adjacent day)
+            # resampled at 1d but timediff is rounded
+        
+            if valid.class_assign.nunique() == 1:
+
+                shipDF.loc[sdt, 'class_assign'] = valid['class_assign'].values[0]
+                for k in range(1, n_gmm+1):
+                    shipDF.loc[sdt,'class' + str(k) + '_prob'] = valid['class' + str(k) + '_prob'].values[0]
+                samplesReplaced.append(sdt)
+
+    shipDF = shipDF.dropna(subset='class_assign')
+    print('Filled in ' + str(len(samplesReplaced)) + ' missing assignments using adjacent profiles')
+    print('Total ' + str(len(shipDF)) + ' valid profiles')
+
+    return shipDF 
+
+
+
+# %% EXCLUDE CHOSEN CLASSES
+
+# used to be in mod_reg uncer exclude_classes but moving here 
+
+def finalize_classes(platDF, exclude_nums, n_gmm, reassign_numbers=True):
+    """ 
+    used to be similar in  mod_reg.exclude_classes(
+    # by convention, "class" is what is returned by pcm module, now reindexed at 1 starting feb 11 2026
+    # after excluding chosen classes, reassign number to "cluster" starting at 1
+    # rename probability cols
+
+    @ return    exclude_nums: list of class numbers to exclude (e.g. [1, 4])
+    @ param     reassign_numbers: if True, reassign class numbers to be sequential after exclusion
+    
+    """
+    valid_classnums = [k for k in range(1, n_gmm+1) if k not in exclude_nums]
+
+    # First split into classes
+    dataClasses = {k:df for k, df in platDF.groupby('class_assign')}
+    dataClasses_excluded = {}
+
+    for k in valid_classnums:
+        dataClasses_excluded[k] = dataClasses[k]
+
+    if reassign_numbers:
+        dataClasses_final = reassign_class_numbers(dataClasses_excluded)
+
+    # Collapse into new dataframes
+    platDF_final = pd.concat(dataClasses_final.values(), axis=0)
+
+    return [dataClasses_final, platDF_final]
+
+def reassign_class_numbers(dataClasses_valid):
+    """  used to be in mod_reg
+    changing here to work with DFs not dicts by class
+    Works for valClasses as well"""
+
+    # If you excluded some, need to renumber the classes
+    dataClasses_final ={}
+    # The ind here is the new class number. Iterate over the old labels/keys
+    for ind, label in enumerate(dataClasses_valid.keys()): # label is the original class number
+        # Rename the dataframe in each item of dataClasses_valid, and save in new dictionary _final
+        new_classnum = ind + 1
+        classDF = dataClasses_valid[label].copy() # original column labels with "classK_prob"
+
+        # Rename probability columns + cluster column to match new class numbers
+        renamedDF = classDF[[x for x in classDF.columns if 'prob' not in x]].copy() # don't copy probabilities yet
+        for ind2, label2 in enumerate(dataClasses_valid.keys()): # 
+            renamedDF['cluster' + str(ind2+1) + '_prob'] = classDF['class' + str(label2) + '_prob'] 
+        renamedDF['cluster'] = np.tile(new_classnum, len(renamedDF))
+        
+        # Store in new dictionary
+        dataClasses_final[new_classnum] = renamedDF
+    
+    return dataClasses_final
+
+
 
 
 # %% 

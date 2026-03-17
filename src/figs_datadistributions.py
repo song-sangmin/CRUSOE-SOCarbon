@@ -30,8 +30,16 @@ datatype_colors = {'train' : "#332288",
                    'val_float': "#DDCC77",  # rose
                    'train_ship': "#44AA99",  # dark blue
                    'val_ship': "#CC6677",  # dark blue
+                   'trainval_float': "crimson",   # 
+                   'trainval_ship':  "#2441AA",  #
+                   'test' : "#076335" 
                    }
 
+
+plat_colors = {'bgc': "crimson", 
+               'socat' : "#96ADFF", 
+               'core' : "#EBD367" 
+                   }
 
 def tol8():
     tol_palette = [
@@ -45,18 +53,31 @@ def tol8():
         "#882255"   # wine
     ]
 
+
+res_delta_tag = 'Residual Δ-pCO$_{2}$ (µatm)'
+
 # %% TRACER DISTRIBUTIONS
 
 def overlay_histograms_singleVar(plotdict, plotvar, ax=None,
-                                 nbins=50, alpha=0.8, showLegend=True):
+                                 nbins=50, binwidth=10, alpha=0.8, stat_type = 'count', showLegend=True):
+    
+    # binwidth will override nbins
     if ax is None:
         fig = plt.figure(figsize=(8,5)); ax = fig.gca()
-    
 
     for tag, platdf in plotdict.items():
-        try: ax.hist(platdf[plotvar], bins=nbins, density=True, alpha=alpha, label=tag, color=datatype_colors[tag], zorder=5);
-        except: ax.hist(platdf[plotvar], bins=nbins, density=True, alpha=alpha, label=tag, zorder=5)
-        alpha = alpha - 0.1
+        # try: ax.hist(platdf[plotvar], bins=nbins, density=True, alpha=alpha, label=tag, color=datatype_colors[tag], zorder=5);
+        # except: ax.hist(platdf[plotvar], bins=nbins, density=True, alpha=alpha, label=tag, zorder=5)
+        # alpha = alpha - 0.1
+    
+    
+        if binwidth is None:
+            sns.histplot(platdf[plotvar], bins=nbins, kde=True, stat=stat_type, ax=ax, color=datatype_colors[tag], alpha=0.3)
+        else:
+            sns.histplot(platdf[plotvar], binwidth=binwidth, kde=True, stat=stat_type, ax=ax, color=datatype_colors[tag], alpha=0.4)
+        # ax.hist(plot_data['val_error'], bins=nbins)
+
+
     ax.grid(linestyle='--', alpha=0.5, zorder=0)
     if showLegend: ax.legend()
 

@@ -11,17 +11,27 @@ from mod_ocean import expand_datetime
 import mod_southpolarplot as sopo
 
 # tol_palette = myplt.tol8()
+# gmm_palette = [
+#     "#332288",  # dark blue   
+#     "#CC6677",  # rose
+#     "#DDCC77",  # sand
+#     "#2E8783",  # teal
+#     "#94235C",   # wine
+#     "#999933",  # olive
+#     "#83DAFF", # light blue
+#     "#11703E"  # green
+# ]
+
+# light version for black background
 gmm_palette = [
-    "#332288",  # dark blue   
-    "#CC6677",  # rose
+    "#83DAFF",  # dark blue   
+    "#E47C8D",  # rose
     "#DDCC77",  # sand
-    "#2E8783",  # teal
-    "#94235C",   # wine
+    "#44CFC8",  # teal
+    "#F3AF50",   # wine
     "#999933",  # olive
-    "#83DAFF", # light blue
     "#11703E"  # green
 ]
-
 my_params = myplt.my_params(size=12, font_family='Futura', title_size=14)
 matplotlib.rcParams.update(my_params)
 
@@ -57,8 +67,13 @@ def sopolar_classes(class_locs,
     return ax
 
 
-def sopolar_classes_paneled(class_locs, colorProbs=False, colorError=False, vlim=None, add_colorbar=False,
-                    ax=None, figsize=(15,10), numpanels=[2,4], dotsize=2, dotalpha=0.8):
+res_delta_tag = 'Residual Δ-pCO$_{2}$ (µatm)'
+
+def sopolar_classes_paneled(class_locs, axs=None, figsize=(15,10), numpanels=[2,4], 
+                            map_facecolor='w',
+                            colorProbs=False, 
+                            colorError=False, error_param = 'val_error', vlim=None, 
+                            add_colorbar=False, dotsize=2, dotalpha=0.8):
     """ 
     Subpaneled plot of all class locations
     @param      class_locs: Dict of xarray Datasets with locations for each class
@@ -67,10 +82,11 @@ def sopolar_classes_paneled(class_locs, colorProbs=False, colorError=False, vlim
                 numpanels: [nrows, ncols] for subplots
                             Default is [2,4] for 8 classes. Use [1,8] for one row
     """
-    fig, axs = plt.subplots(numpanels[0], numpanels[1], figsize=(15,10), layout='tight', subplot_kw={'projection': ccrs.SouthPolarStereo()})
+    if axs is None:
+        fig, axs = plt.subplots(numpanels[0], numpanels[1], figsize=(15,10), layout='constrained', subplot_kw={'projection': ccrs.SouthPolarStereo()})
 
     for ax in axs.flatten():
-        sopo.format_southpolar(ax)
+        sopo.format_southpolar(ax, map_facecolor = map_facecolor)
         sopo.add_frontlines(ax)
 
     for ind, ax in enumerate(axs.flatten()[:len(class_locs.keys())]):
@@ -86,14 +102,18 @@ def sopolar_classes_paneled(class_locs, colorProbs=False, colorError=False, vlim
             cmap=cmo.thermal, vmin=0, vmax=1,
             alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
         elif colorError:
-            sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum].val_error,
-                cmap='RdBu', vmin=-vlim, vmax=vlim,
+            sca = ax.scatter(class_locs[knum].longitude, class_locs[knum].latitude, c=class_locs[knum][error_param],
+                cmap='RdBu_r', vmin=-vlim, vmax=vlim,
+
+
                 alpha=1, s=dotsize, transform=ccrs.PlateCarree(), label=('class' + str(knum)))
         
-        ax.set_title('Class ' + str(knum), fontsize=14)
+        ax.set_title('Cluster ' + str(knum), fontsize=14)
+
     if add_colorbar:
-        plt.colorbar(sca, ax=axs.flatten()[-1], orientation='vertical')
-    return ax
+        plt.colorbar(sca, ax=axs.flatten()[:], orientation='horizontal', location='bottom', shrink=0.4,
+                      label = res_delta_tag)
+    return axs
 
         
 
@@ -136,12 +156,12 @@ def mean_tracer_profiles_paneled(class_data, vars=['CT', 'SA'],
     fig, axs = plt.subplots(numpanels[0], numpanels[1], figsize=figsize, layout='tight', sharey=True)
 
     for ind, ax in enumerate(axs.flatten()[:numpanels[1]]):
-        mean_tracer_profiles(class_data[ind], var=vars[0], 
+        mean_tracer_profiles(class_data[ind+1], var=vars[0], 
                              ax=ax, shadecolor=gmm_palette[ind])
         ax.set_title('Class ' + str(ind+1) + ' ' + vars[0], fontsize=14)
 
     for ind, ax in enumerate(axs.flatten()[numpanels[1]:]):
-        mean_tracer_profiles(class_data[ind], var=vars[1], 
+        mean_tracer_profiles(class_data[ind+1], var=vars[1], 
                              ax=ax, shadecolor=gmm_palette[ind])
         ax.set_title('Class ' + str(ind+1) + ' ' + vars[1], fontsize=14)
     

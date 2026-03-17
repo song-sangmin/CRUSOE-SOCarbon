@@ -225,39 +225,39 @@ def boxplot_across_columns(data, ax=None, boxcolor='r'):
         patch.set_facecolor(mpcolors.to_rgba(color, alpha=0.5))
     return ax
 
+# moving to figs_reg
+# def error_kde(data, ax=None, textsize=14, ymax=None, pltcolor='r', 
+#               linelabel='', linestyle='solid', linealpha = 0.7, lw=2):
+#     """
+#     New KDE plot using all combined validation errors from K-Fold 
+#     @param:     data       list of errors
 
-def error_kde(data, ax=None, textsize=14, ymax=None, pltcolor='r', 
-              linelabel='', linestyle='solid', lw=2):
-    """
-    New KDE plot using all combined validation errors from K-Fold 
-    @param:     data       list of errors
+#     """ 
 
-    """ 
+#     if ax == None:
+#         fig  = plt.figure(figsize=(6,4), tight_layout=True)
+#         ax = plt.gca()
 
-    if ax == None:
-        fig  = plt.figure(figsize=(6,4), tight_layout=True)
-        ax = plt.gca()
+#     # Add Gaussian KDE to estimate probability density function
+#     x = np.linspace(data.min(), data.max(), 1000)
+#     kde = scipy.stats.gaussian_kde(data)
 
-    # Add Gaussian KDE to estimate probability density function
-    x = np.linspace(data.min(), data.max(), 1000)
-    kde = scipy.stats.gaussian_kde(data)
+#     ls = linestyle
+#     den = ax.plot(x, kde(x), color=pltcolor, linewidth=lw, linestyle=ls, alpha=0.6, label=linelabel)
 
-    ls = linestyle
-    den = ax.plot(x, kde(x), color=pltcolor, linewidth=lw, linestyle=ls, alpha=0.6, label=linelabel)
+#     if ymax != None:
+#         ax.set_ylim([0, ymax])
 
-    if ymax != None:
-        ax.set_ylim([0, ymax])
+#     sns.set_palette('Dark2')
+#     ax.grid(alpha=0.5, zorder=1)
+#     ax.axvline(x=0, color='k', linestyle='dotted', linewidth=1.5, alpha=linealpha, zorder=0)
 
-    sns.set_palette('Dark2')
-    ax.grid(alpha=0.5, zorder=1)
-    ax.axvline(x=0, color='k', linestyle='dotted', linewidth=1.5, alpha=0.7, zorder=0)
+#     if len(linelabel)>0:
+#         leg = ax.legend(fontsize=14, framealpha=1)
+#         # for legobj in leg.legend_Handles:
+#         #     legobj.set_linewidth(3.5)
 
-    if len(linelabel)>0:
-        leg = ax.legend(fontsize=14, framealpha=1)
-        # for legobj in leg.legend_Handles:
-        #     legobj.set_linewidth(3.5)
-
-    return ax
+#     return ax
 
 
 # %% Maps

@@ -139,7 +139,7 @@ def find_trainval_split(floatDF, shipDF, pc_thresh=0.3, n_gmm=6):
     # pc_thresh = 0.3
     for soclass in range(1, n_gmm+1):
         print('==> Processing class ' + str(soclass))
-        classDF = platDF_all[platDF_all['cluster'] == soclass]
+        classDF = platDF_all[platDF_all['class_assign'] == soclass]
         classDF_float = classDF[~classDF.wmoid.isna()]
         classDF_ship = classDF[classDF.wmoid.isna()]
 
@@ -174,89 +174,67 @@ def separate_platforms(platDF_combined):
     @ param     platDF_combined: combined dataframe with both float and ship data
     @ return    floatDF, shipDF
     """
+    
     floatDF = platDF_combined[~platDF_combined.wmoid.isna()].copy()
     shipDF = platDF_combined[~platDF_combined.cruiseid.isna()].copy()
 
     return [floatDF, shipDF]
 
 
-# def exclude_classes(exclude_nums, trainClasses, valClasses, n_gmm=8, reassign_numbers=True):
+
+# OUTDATED. moving to mod_pcm and doing exclusion before splitting 
+# def exclude_classes(exclude_nums, trainClasses, n_gmm=8, reassign_numbers=True):
 #     """ 
+#     jan 2026 : changing to do one dict at a time
 #     After splitting, remove sea ice zone 
-#     @ param     reassign_numbers: if True, reassign class numbers to be sequential after exclusion"""
+
+#     # by convention, "class" is what is returned by pcm module, index starting at 0 
+#     # after excluding chosen classes, reassign number to "cluster" starting at 1
+#     # rename probability cols
+#     @ return    exclude_nums: list of class numbers to exclude (e.g. [1, 4])
+
+#     @ param     reassign_numbers: if True, reassign class numbers to be sequential after exclusion
+    
+#     """
 #     valid_classnums = [k for k in range(1, n_gmm+1) if k not in exclude_nums]
 #     # print(trainClasses.keys())
 #     trainClasses_excluded = {}
-#     valClasses_excluded = {}
 
 #     for k in valid_classnums:
 #         # print(valid_classnums)
 #         trainClasses_excluded[k] = trainClasses[k]
-#         valClasses_excluded[k] = valClasses[k]
 
 #     if reassign_numbers:
 #         trainClasses_excluded = reassign_class_numbers(trainClasses_excluded)
-#         valClasses_excluded = reassign_class_numbers(valClasses_excluded)
 
 #     # Collapse into new dataframes
 #     trainDF = pd.concat(trainClasses_excluded.values(), axis=0)
-#     valDF = pd.concat(valClasses_excluded.values(), axis=0)
 
-#     return [trainClasses_excluded, valClasses_excluded, trainDF, valDF]
-
-
-def exclude_classes(exclude_nums, trainClasses, n_gmm=8, reassign_numbers=True):
-    """ 
-    feb 6 2026 : changing to do one dict at a time
-    After splitting, remove sea ice zone 
-
-    # by convention, "class" is what is returned by pcm module, index starting at 0 
-    # after excluding chosen classes, reassign number to "cluster" starting at 1
-    # rename probability cols
-    @ return    exclude_nums: list of class numbers to exclude (e.g. [1, 4])
-
-    @ param     reassign_numbers: if True, reassign class numbers to be sequential after exclusion
-    
-    """
-    valid_classnums = [k for k in range(1, n_gmm+1) if k not in exclude_nums]
-    # print(trainClasses.keys())
-    trainClasses_excluded = {}
-
-    for k in valid_classnums:
-        # print(valid_classnums)
-        trainClasses_excluded[k] = trainClasses[k]
-
-    if reassign_numbers:
-        trainClasses_excluded = reassign_class_numbers(trainClasses_excluded)
-
-    # Collapse into new dataframes
-    trainDF = pd.concat(trainClasses_excluded.values(), axis=0)
-
-    return [trainClasses_excluded, trainDF]
+#     return [trainClasses_excluded, trainDF]
 
 
+# moved to mod_pc
+# def reassign_class_numbers(trainClasses_valid):
+#     """  Works for valClasses as well"""
 
-def reassign_class_numbers(trainClasses_valid):
-    """  Works for valClasses as well"""
+#     # If you excluded some, need to renumber the classes
+#     trainClasses_final ={}
+#     # The ind here is the new class number. Iterate over the old labels/keys
+#     for ind, label in enumerate(trainClasses_valid.keys()): # label is the original class number
+#         # Rename the dataframe in each item of trainClasses_valid, and save in new dictionary _final
+#         new_classnum = ind + 1
+#         classDF = trainClasses_valid[label].copy() # original column labels with "classK_prob"
 
-    # If you excluded some, need to renumber the classes
-    trainClasses_final ={}
-    # The ind here is the new class number. Iterate over the old labels/keys
-    for ind, label in enumerate(trainClasses_valid.keys()): # label is the original class number
-        # Rename the dataframe in each item of trainClasses_valid, and save in new dictionary _final
-        new_classnum = ind + 1
-        classDF = trainClasses_valid[label].copy() # original column labels with "classK_prob"
-
-        # Rename probability columns + cluster column to match new class numbers
-        renamedDF = classDF[[x for x in classDF.columns if 'prob' not in x]].copy() # don't copy probabilities yet
-        for ind2, label2 in enumerate(trainClasses_valid.keys()): # 
-            renamedDF['class' + str(ind2+1) + '_prob'] = classDF['class' + str(label2) + '_prob'] 
-        renamedDF['cluster'] = np.tile(new_classnum, len(renamedDF))
+#         # Rename probability columns + cluster column to match new class numbers
+#         renamedDF = classDF[[x for x in classDF.columns if 'prob' not in x]].copy() # don't copy probabilities yet
+#         for ind2, label2 in enumerate(trainClasses_valid.keys()): # 
+#             renamedDF['class' + str(ind2+1) + '_prob'] = classDF['class' + str(label2) + '_prob'] 
+#         renamedDF['cluster'] = np.tile(new_classnum, len(renamedDF))
         
-        # Store in new dictionary
-        trainClasses_final[new_classnum] = renamedDF
+#         # Store in new dictionary
+#         trainClasses_final[new_classnum] = renamedDF
     
-    return trainClasses_final
+#     return trainClasses_final
 
 
 
@@ -369,7 +347,11 @@ def fit_single_RFR(feat_list,
                                 criterion = loss_criterion,
                                 bootstrap=True, min_samples_split=min_samples_split)
         #  max_features: use at most X features at each split (m~sqrt(total features))
-    trainingDF= trainingDF.copy()
+
+    
+
+    trainingDF= trainingDF.dropna(subset=feat_list).copy()
+
     if 'mld' in feat_list:
         trainingDF['log_mld'] = np.log(trainingDF['mld'])
         feat_list = [x if x != 'mld' else 'log_mld' for x in feat_list]
@@ -398,7 +380,7 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
 
     k_list = ClusteredModVer.ind_list
     for k in k_list:
-        pred_col = 'class' + str(k) + '_pred'
+        pred_col = 'cluster' + str(k) + '_pred'
         sampleDF[pred_col] = ClusteredModVer.models[k].predict(sampleDF[feat_list].to_numpy())
     sampleDF['weighted_pred'] = sampleDF.apply(lambda row: weighted_prediction(row, k_list), axis=1)
 
@@ -409,6 +391,34 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
     return sampleDF
     
 # %% temp xgb hold
+
+from xgboost import XGBRegressor
+
+# # https://xgboost.readthedocs.io/en/latest/treemethod.html
+# # XGBoost: A Scalable Tree Boosting System
+# # Tianqi Chen, Carlos Guestrin
+
+# def fit_cluster_XGB(feat_list, 
+#               trainingDF, 
+#               var_predict = 'delta_fco2',
+#               ntrees=1000, 
+#               booster = 'gbtree',
+#               tree_method = 'approx'):
+#     """ 
+#     Fit single RFR for a class. 
+#     Compute validation errors later 
+#     """
+#     Mdl = XGBRegressor(n_estimators=ntrees, 
+#                       booster = booster, 
+#                       tree_method=tree_method)
+
+#     # Train the model 
+#     X_training = trainingDF[feat_list].to_numpy()
+#     Y_training = trainingDF[var_predict].to_numpy()
+#     Mdl.fit(X_training, Y_training)
+
+#     return Mdl
+
 # def run_clustered_XGB(feat_list, 
 #               trainingDF, 
 #               validationDF,
@@ -427,7 +437,7 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
 
 #     for k in k_list:
 #         # Train regression for each class 
-#         prob_col = 'class' + str(k) + '_prob'
+#         prob_col = 'cluster' + str(k) + '_prob'
 #         training_classes[k] = trainingDF[trainingDF[prob_col] > prob_thresh]
 
 #     clustered_run = myreg.ClusteredModelVersion(ind_list = k_list)
@@ -446,15 +456,15 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
 #     # === VALIDATION 
 #     for k in tqdm(k_list): 
 #         # For each row in validationDF, apply the regression to all the data
-#         pred_col = 'class' + str(k) + '_pred'
+#         pred_col = 'cluster' + str(k) + '_pred'
 #         validationDF[pred_col] = clustered_run.models[k].predict(validationDF[feat_list].to_numpy())
 
 #     # Make final predictions by weighting by class probabilities
 #     def weighted_prediction(row):
 #         total = 0
 #         for k in k_list:
-#             prob_col = 'class' + str(k) + '_prob'
-#             pred_col = 'class' + str(k) + '_pred'
+#             prob_col = 'cluster' + str(k) + '_prob'
+#             pred_col = 'cluster' + str(k) + '_pred'
 #             total += row[prob_col] * row[pred_col]
 #         return total
     
@@ -565,19 +575,23 @@ class CrossValContainer:
         return self
 
 # Make final predictions by weighting by class probabilities
-def weighted_prediction(row, ind_list):
+def weighted_prediction(row, ind_list, pred_col_tag = '_pred'):
     """ ind_list or k_list is range(1,n_gmm+1)
+
+    @ param: pred_col_tag = '_pred' by default
+                            for calibration, pass '_calpred'
+                    
     """
     total = 0
     for k in ind_list:
-        prob_col = 'class' + str(k) + '_prob'
-        pred_col = 'class' + str(k) + '_pred'
+        prob_col = 'cluster' + str(k) + '_prob'
+        pred_col = 'cluster' + str(k) + pred_col_tag
         total += row[prob_col] * row[pred_col]
     return total
 
 
 
-def summarize_DF_errors(platDF, param = 'weighted_pred', target_var = 'delta_pco2'):
+def summarize_DF_errors(platDF, error_param = 'val_error', target_var = 'delta_pco2'):
     """ 
     summarize validation errors for any Dataframe with "val_error" column
 
@@ -586,13 +600,13 @@ def summarize_DF_errors(platDF, param = 'weighted_pred', target_var = 'delta_pco
 
     should move to mod_evaluation.py eventually
     """
-    err = platDF['val_error']
+    err = platDF[error_param]
     median_abs_error = np.abs(err).median()
     mean_abs_error = np.abs(err).mean()
     bias = (err.mean())
 
-    platDF['val_error_sq'] = platDF['val_error']**2
-    mse = np.sum(platDF['val_error_sq']) / len(platDF.val_error)
+    platDF[error_param + '_sq'] = platDF[error_param]**2
+    mse = np.sum(platDF[error_param + '_sq']) / len(platDF[error_param])
     rmse = np.sqrt(mse)
 
     # absolute percentage error
@@ -604,9 +618,9 @@ def summarize_DF_errors(platDF, param = 'weighted_pred', target_var = 'delta_pco
     return result
 
 # def compare_run_results(storedRuns):
-def storedRuns_comparison(storedRuns, run_tags = None, param='weighted_pred', 
+def storedRuns_comparison(storedRuns, run_tags = None, error_param='val_error', 
                           target_var='delta_pco2',
-                          show_platforms = ''):
+                          show_platforms = ''): # float, ship, or combined
     """ 
     storedRuns: dictionary of ModelVersion objects, runtag as keys"""
     total_MAEs = pd.DataFrame()
@@ -624,18 +638,18 @@ def storedRuns_comparison(storedRuns, run_tags = None, param='weighted_pred',
         # runResults = singleRun_collapse_errors(singleRun)
 
         
-        runResults['val_error'] = runResults[param] - runResults[target_var]
-        runResults['val_relative_error'] = runResults['val_error'] / runResults[target_var]
+        # runResults['val_error'] = runResults[param] - runResults[target_var]
+        # runResults['val_relative_error'] = runResults['val_error'] / runResults[target_var]
 
-        [run_median_abs_error, run_mean_abs_error, run_bias, run_rmse] = summarize_DF_errors(runResults, param=param)
+        [run_median_abs_error, run_mean_abs_error, run_bias, run_rmse] = summarize_DF_errors(runResults, error_param=error_param)
 
         total_MAEs.loc[run_tag, 'median_AE'] = run_median_abs_error
         total_MAEs.loc[run_tag, 'mean_AE'] = run_mean_abs_error
         total_MAEs.loc[run_tag, 'bias'] = run_bias
         total_MAEs.loc[run_tag, 'RMSE'] = run_rmse
 
-    if show_platforms in ['float', 'ship']:
-        show_rows = [x for x in run_tags if 'combined' in x]
+    if show_platforms in ['float', 'ship', 'combined']:
+        show_rows = [x for x in run_tags if show_platforms in x]
         total_MAEs = total_MAEs.loc[show_rows, :]
 
     # total_MAEs['labels'] = feat_list_labels
@@ -652,7 +666,7 @@ def singleRun_collapse_errors(singleRun):
     combined = pd.concat([singleRun.DF_err[x] for x in ind_list], axis=0)
     return combined
 
-def singleRun_class_summary(singleRun):
+def singleRun_class_summary(singleRun, error_param = 'val_error'):
     """ 
     Summarize error statistics for each class, and also overall
     """
@@ -662,13 +676,13 @@ def singleRun_class_summary(singleRun):
     for ind in ind_list:
         # result.loc[ind, :] = summarize_DF_errors(singleRun.DF_err[ind]) # old
         class_error = full_validation[full_validation['cluster'] == ind].copy()
-        result.loc[ind, :] = summarize_DF_errors(class_error)
+        result.loc[ind, :] = summarize_DF_errors(class_error, error_param = error_param)
 
     # result.loc['overall', :] = summarize_DF_errors(singleRun_collapse_errors(singleRun))
-    result.loc['overall', :] = summarize_DF_errors(full_validation)
+    result.loc['overall', :] = summarize_DF_errors(full_validation, error_param = error_param)
     return result
 
-def singleRun_platform_summary(singleRun):
+def singleRun_platform_summary(singleRun, error_param = 'val_error'):
     """ 
     note: used to be summarize_DF()
     Summarize error statistics for a single run, split by platform type
@@ -683,7 +697,7 @@ def singleRun_platform_summary(singleRun):
     result = pd.DataFrame(index=['median_AE', 'mean_AE', 
                                 # 'median_ape', 'mean_ape',
                                 'bias', 'rmse'])
-    result['overall'] = summarize_DF_errors(runResults)
+    result['overall'] = summarize_DF_errors(runResults, error_param = error_param)
 
     [errors_float, errors_ship] = separate_platforms(runResults)
     result['float_component'] = summarize_DF_errors(errors_float)
@@ -787,20 +801,59 @@ def print_errors_restrictdepth(data, var ='test_relative_error', pres_lim= [0,10
 # %% Calibration function s
 # originally from 3.2_kfold
 from scipy import stats
-def apply_clustered_calibration(cal_coeffs, valDF, n_clusters):
+
+def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'delta_pco2'):
     """ @param  data_byClass """
-    # Apply the calibration to the weighted prediction 
-    data_byClass = {ncluster:df for ncluster, df in valDF.groupby('cluster')}
-
-    for ncluster in range(1, n_clusters+1):
-        class_valDF = data_byClass[ncluster].copy()
-        slope, intercept = cal_coeffs[ncluster]
-
-        # Apply the linear correction to the weighted_pred column
-        class_valDF['lincal_pred'] = class_valDF['weighted_pred'] * slope + intercept
-        data_byClass[ncluster] = class_valDF.copy()
     
-    return data_byClass
+    # New version as of Mar 1 2026
+    calibrated_valDF = valDF.copy()
+    k_list = range(1, n_clusters+1)
+
+    for ncluster in k_list:
+
+        slope, intercept = cal_coeffs[ncluster]
+        new_col = 'cluster' + str(ncluster) + '_calpred'
+        calibrated_valDF[new_col] = calibrated_valDF['cluster' + str(ncluster) + '_pred'] * slope + intercept
+
+    calibrated_valDF['lincal_pred'] = calibrated_valDF.apply(lambda row: weighted_prediction(row, k_list, pred_col_tag = '_calpred'),
+                                                                      axis=1)
+
+    calibrated_valDF['calibrated_error'] = calibrated_valDF['lincal_pred'] - calibrated_valDF[target_var]
+    calibrated_valDF['calibrated_relative_error'] = calibrated_valDF['calibrated_error'] / calibrated_valDF[target_var]
+       
+    # === Version as of Feb 10 2026 (outdated)
+    # Apply the calibration to the weighted prediction 
+    # data_byClass = {ncluster:df for ncluster, df in valDF.groupby('cluster')}
+
+    # for ncluster in range(1, n_clusters+1):
+    #     class_valDF = data_byClass[ncluster].copy()
+    #     slope, intercept = cal_coeffs[ncluster]
+
+    #     # Apply the linear correction to the weighted_pred column
+    #     class_valDF['lincal_pred'] = class_valDF['weighted_pred'] * slope + intercept
+
+    #     class_valDF['calibrated_error'] = class_valDF['lincal_pred'] - class_valDF[target_var]
+    #     class_valDF['calibrated_relative_error'] = class_valDF['calibrated_error'] / class_valDF[target_var]
+
+
+    #     data_byClass[ncluster] = class_valDF.copy()
+    
+    # return data_byClass
+    return calibrated_valDF
+
+
+# # Make final predictions by weighting by class probabilities
+# def weighted_prediction(row, ind_list):
+#     """ ind_list or k_list is range(1,n_gmm+1)
+#     """
+#     total = 0
+#     for k in ind_list:
+#         prob_col = 'cluster' + str(k) + '_prob'
+#         pred_col = 'cluster' + str(k) + '_pred'
+#         total += row[prob_col] * row[pred_col]
+#     return total
+
+
 
 def get_clustered_calibration_coeffs(valDF):
     cal_coeffs = {ncluster:None for ncluster in valDF['cluster'].unique()}

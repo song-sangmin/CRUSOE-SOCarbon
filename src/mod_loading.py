@@ -30,21 +30,13 @@ def import_core_data(type='L3_only'):
         coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2023_acc20250424.nc')
 
     elif type == 'processed': # # with MLD added
-        # coreINDEX, coreDS = mod_prep.add_mixedlayer_pressure(coreINDEX, coreDS)
-        # datetag = '20260121'
-        # folder = '../working-vars/argo/import-L3/'
-        # coreDS = xr.open_dataset(folder + 'coreDATA_validL3_2014-2023_withMLD_acc' + datetag + '.nc')
-
-        # To use coreDS with satellite ADT and MLD added (from 2.0_Preprocessing)
-        # coreINDEX processed has all regression vars, including atmospheric pco2 (converted from ppm)
-        datetag = '20260201'
-        folder = '../working-vars/regression/inputs/core/'
-        coreDS = xr.open_dataset(folder + 'coreDATA_processed_2014-2023_MLD_ADT_SLA_acc' + datetag + '.nc')
-        coreINDEX = xr.open_dataset(folder + 'coreINDEX_pco2-atmos_processed_2014-2023_MLD_ADT_acc20260211.nc')
-
-        # coreINDEX['mld'] = coreDS['mld'].mean(dim='pressure')
-
-
+        # BEST VERSION AS OF FEB 6
+        # These are in xr Dataset format
+        folder = '../working-vars/L4-datasets/'
+        coreINDEX = xr.open_dataset(folder + 'coreINDEX_processed_2014-2023_atmosco2_mld_adt_acc20260211.nc')
+        coreDS = xr.open_dataset(folder + 'coreDATA_processed_2014-2023_mld_adt_sla_acc20260211.nc')
+        #coreINDEX is used for application, dataframe version is in regression/inputs/P1-processed/
+                                    
     return [coreDS, coreINDEX]
 
 
@@ -78,18 +70,27 @@ def import_bgc_data(type = 'L3_only'):
         
     elif type == 'processed': # with clustering and MLD added
         folder = '../working-vars/argo/import-L3/'
-        datetag = '20260121'
-        bgcINDEX = xr.open_dataset(folder + 'bgcINDEX_validL3_2014-2023_withMLD_acc' + datetag + '.nc')
-        bgcDS = xr.open_dataset(folder + 'bgcDATA_validL3_2014-2023_withMLD_acc' + datetag + '.nc')
+        # datetag = '20260121'
+        # bgcINDEX = xr.open_dataset(folder + 'bgcINDEX_validL3_2014-2023_withMLD_acc' + datetag + '.nc')
+        bgcDS = xr.open_dataset(folder + 'bgcDATA_validL3_2014-2023_withMLD_acc' + '20260121' + '.nc')
+
+        folder = '../working-vars/L4-datasets/' # new version with full co2, mld, adt
+        bgcINDEX = xr.open_dataset(folder + 'bgcINDEX_processed_2014-2023_fullco2_mld_adt_acc20260211.nc')
     
-    elif type == 'test':
-        folder = '/Volumes/crusoe-repo/data/bgc/L3-interp/'
-        datetag = '20260209'
-        bgcINDEX = xr.open_dataset(folder + 'bgcINDEX_valid_interp_2024_TESTING_acc' + datetag + '.nc')
-        bgcDS = xr.open_dataset(folder + 'bgcDATA_valid_interp_2024_TESTING_acc' + datetag + '.nc')
+    elif type == 'test': # 2024 data only. for dataframe version, use import_ML_dataframes():
+        # folder = '/Volumes/crusoe-repo/data/bgc/L3-interp/'
+        # bgcDS = xr.open_dataset(folder + 'bgcDATA_valid_interp_2024_TESTING_acc' + '20260209' + '.nc')
+        # # Make sure bgcDS profids don't overlap with coreDS (numbering started over for test period)
+        # temp = bgcDS.to_dataframe().reset_index().copy()
+        # temp['profid'] = temp['profid'].apply(lambda x: x.replace('id', 'testid'))
+        # bgcDS = temp.set_index(['profid', 'pressure']).to_xarray()
+
+
+        folder = '../working-vars/L4-datasets/' # new version with full co2, mld, adt
+        bgcINDEX = xr.open_dataset(folder + 'testINDEX_processed_2024_fullco2_mld_adt_acc20260211.nc')
+        bgcDS = xr.open_dataset(folder + 'testDS_processed_2024_fullco2_mld_adt_acc20260211.nc')
 
     return [bgcDS, bgcINDEX]
-
 
 
 # def import_float_20m_data():
@@ -184,46 +185,142 @@ def import_socat_colocation(buffer_time = '7d'):
 
     return sepstat_7d
 
-def import_clustering_results(pcm_params='pc8_gmm8'):
+# %% PROCESSED DATAFRAMES /working-vars/regression/P1-processed/
+def import_p1_processed():
     """ 
-    Files were created in 1.1_pcm_fit_coreArgo.ipynb
-    [Y_gmm, allprobs, gmm_desc, coreDF_ave] = loader.import_clustering_results()
-    ~ 2 sec
+    Output of 2.0_RUN_preprocessing
+    Returns dataframes that have mld, adt, atmospheric co2 added
+    Not yet clustered
     """
-    filepath = '../working-vars/pcm/' + pcm_params + '/'
+    print('Importing processed dataframes...')
+    folder = '../working-vars/regression/P1-processed/'
+    datetag = '20260211'
+    bgcArgo_trainval = pd.read_csv(folder + 'bgcArgo_trainval_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2014-2023_acc' + datetag + '.csv', index_col=0)
+    bgcArgo_test = pd.read_csv(folder + 'bgcArgo_test_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2024_acc' + datetag + '.csv', index_col=0)
+    socat_trainval = pd.read_csv(folder + 'socat_trainval_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
+    coreArgo_application = pd.read_csv(folder + 'coreArgo_application_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
 
-    if pcm_params == 'pc8_gmm8':
-        # from dec 2025
-        Y_gmm = pd.read_csv(filepath + 'Y_gmm_20251201.csv', index_col=0) # Results of GMM
-        datetag = '20251208'
-        allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')
-        allprobs = allprobs.rename(columns = {str(k):(k+1) for k in range(8)})
-    elif pcm_params == 'pc8_gmm6':
-        # updated jan 20226
-        datetag = '20260119'
-        Y_gmm = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv',
-                             index_col=0) # Results of GMM
-        allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')
-        allprobs = allprobs.rename(columns = {str(k):(k+1) for k in range(8)})
+    output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
+    for df in output:
+        df['datetime'] = pd.to_datetime(df['datetime'])
 
-    elif pcm_params == 'pc8_gmm7':
-        datetag = '20260201'
-        Y_gmm = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv',
-                             index_col=0) # Results of GMM
-        allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')  # already renamed
+    print('Returned [bgcArgo_trainval(2014-2023), bgcArgo_test(2024), socat_trainval(2014-2023), coreArgo_application(2014-2023)]')
+    return output # [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
+
+# %% CLUSTERING
+
+def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6'):
+    """ 
+    Updated clustering after preprocessing Feb 11 2026
+
+    @return         PCM_finder: dataframe with profid, class probabilities, assignment, prof_datetag
+    """
+    filepath = '../working-vars/regression/P2-clustered/' + pcm_params + '/'
+
+    if type == 'pcm_probs':
+        # outut from 2.1_PCM
+        print('Importing clustering results for ' + pcm_params + '...')
+        if pcm_params == 'pc8_gmm6': datetag = '20260211'
+
+        PCM_components = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
+        PCM_finder = pd.read_csv(filepath + 'PCM_finder_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
+        # allprobs = pd.read_csv(filepath + 'postprobs_' + pcm_params + '_' + datetag + '.csv')  # already reindexed at 1
+        PCM_finder = PCM_finder.set_index('profid')
+        print('Returned [PCM_components, PCM_finder (probabilities)]')
+
+        output = [PCM_components, PCM_finder]
+
+    elif type == 'class-gapfilled': #
+        #output from 2.2_PCM
+        print('Importing processed Dataframes with gap-filled classes; ' + pcm_params + '...')
+        datetag = '20260211'
+        bgcArgo_trainval = pd.read_csv(filepath + 'P2_bgcArgo-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        bgcArgo_test = pd.read_csv(filepath + 'P2_bgcArgo-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        socat_trainval = pd.read_csv(filepath + 'P2_socat-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        coreArgo_application = pd.read_csv(filepath + 'P2_coreArgo-applicationDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+       
+       # The bgcArgo core profiles are still in coreArgo_application, but need to exclude ones that have associated bgc obs
+        shared_profids = set(bgcArgo_trainval.index).intersection(set(coreArgo_application.index))
+        core_only_profids = set(coreArgo_application.index) - set(shared_profids) # profids without associated 
+        coreArgo_application = coreArgo_application.loc[[*core_only_profids]]
+
+        output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
+        for df in output:
+            df['datetime'] = pd.to_datetime(df['datetime'])
+
+    print('Returned [bgcArgo_trainval(2014-2023), bgcArgo_test(2024), socat_trainval(2014-2023), coreArgo_application(2014-2023)]')
+    return output # [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application] = import_p2_clustered(type = 'class-gapfilled', pcm_params='pc8_gmm6')
+
+
+def import_p3_trainval(pcm_desc = 'pc8_gmm6_excludeClass5'):
+    """ same as P3 but with any excluded classes removed 
+    """
+    folder = '../working-vars/regression/P3-trainval/'
+    trainvalDF_all = pd.read_csv(folder + 'P3-trainval_bgcArgo_SOCAT_2014-2023_' + 
+                                 'floatparam_pHbias5_pK1_' + pcm_desc + 
+                                 '_acc20260211.csv')
+    coreDF = pd.read_csv(folder + 'coreArgo_application_final_floatparam_pHbias5_pK1_' + pcm_desc + '_20260211.csv')
+    testDF = pd.read_csv(folder + 'bgcArgo_test_final_floatparam_pHbias5_pK1_' + pcm_desc + '_20260211.csv')
+
+    print(len(trainvalDF_all), 'profiles in trainvalDF_all (2014-2023); ', len(coreDF), 'profiles in coreDF (2014-2023)')
+    print(len(testDF), 'profiles in testDF (2024 bgcArgo)')
+    return [trainvalDF_all, coreDF, testDF]
+
+
+def import_p4_pointobs(pcm_desc = 'pc8_gmm6_excludeClass5'):
+    # Combined point obs for socat and bgc-argo (pco2_ocean, observed) and core estimates (pco2_ocean_pred)
+    folder = '../working-vars/regression/P3-estimated/'
+    filename = 'P3-point_pCO2_combined_core-bgc-socat_2014-2023_featD_pc8_gmm6_exclClass5_acc20260211.csv'
+
+    pointDF = pd.read_csv(folder + filename, index_col=0)
+    return pointDF
+
+# def import_clustering_results(pcm_params='pc8_gmm8'):
+#     """ 
+#     originally used before running preprocessing in 2.0
+#     as of feb 11 changing to make P1-processed datasets and dataframes first, then clustering
+#     replace with above method 
+
+#     Files were created in 1.1_pcm_fit_coreArgo.ipynb
+#     [Y_gmm, allprobs, gmm_desc, coreDF_ave] = loader.import_clustering_results()
+#     ~ 2 sec
+#     """
+#     filepath = '../working-vars/pcm/' + pcm_params + '/'
+
+#     if pcm_params == 'pc8_gmm8':
+#         # from dec 2025
+#         Y_gmm = pd.read_csv(filepath + 'Y_gmm_20251201.csv', index_col=0) # Results of GMM
+#         datetag = '20251208'
+#         allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')
+#         allprobs = allprobs.rename(columns = {str(k):(k+1) for k in range(8)})
+#     elif pcm_params == 'pc8_gmm6':
+#         # updated jan 20226
+#         datetag = '20260119'
+#         Y_gmm = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv',
+#                              index_col=0) # Results of GMM
+#         allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')
+#         allprobs = allprobs.rename(columns = {str(k):(k+1) for k in range(8)})
+
+#     elif pcm_params == 'pc8_gmm7':
+#         datetag = '20260201'
+#         Y_gmm = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv',
+#                              index_col=0) # Results of GMM
+#         allprobs = pd.read_csv(filepath + 'postprobs_allclasses_' + datetag + '.csv')  # already renamed
         
-    coreINDEX = import_core_data(type='L3_only')[1]
+#     coreINDEX = import_core_data(type='L3_only')[1]
 
-    coreDF_ave = coreINDEX.to_dataframe()
-    coreDF_ave['prof_datetag'] = coreDF_ave.datetime.astype(str)
-    coreDF_ave['prof_datetag'] = coreDF_ave['prof_datetag'].apply(lambda x: x.replace('-','').split(' ')[0])
-    coreDF_ave['prof_datetag'] = coreDF_ave.apply(lambda row: str(int(row['wmoid'])) + '_' + str(row['prof_datetag']), axis=1)
+#     coreDF_ave = coreINDEX.to_dataframe()
+#     coreDF_ave['prof_datetag'] = coreDF_ave.datetime.astype(str)
+#     coreDF_ave['prof_datetag'] = coreDF_ave['prof_datetag'].apply(lambda x: x.replace('-','').split(' ')[0])
+#     coreDF_ave['prof_datetag'] = coreDF_ave.apply(lambda row: str(int(row['wmoid'])) + '_' + str(row['prof_datetag']), axis=1)
 
-    return [Y_gmm, allprobs, pcm_params, coreDF_ave]
+#     return [Y_gmm, allprobs, coreDF_ave]
 
 # used to be import_regression_data
 def import_clustered_data(pcm_params='pc8_gmm8'):
     """ 
+    
+
 
     Files were created in 1.2_pcm_classify_bgcArgo_ship.ipynb
     Colocation needed to cluster SOCAT data was done in 0.5_socat2024_colocation.ipynb 
@@ -273,19 +370,30 @@ def import_clustered_data(pcm_params='pc8_gmm8'):
 
 def import_processed_inputs(float_param = 'pHbias5_pK1'):
     """ 
-    with MLD and ADT added. updated feb 3 2026
+    Has training/validation data : bgcArgo 2014-2023, socat 2014-2023
+    Test data: bgcArgo_2024 
+    Application data: coreArgo 2014-2024
+
+
+    with MLD and ADT added. updated feb 10 2026
     Files created in 2.0_RUN, originally after clustering
     Saving output into new foloder processed-< > so MLD 
     doesn't get recalculated every time with new clustering
     """
     floatDF = import_soccom_20m_averages(processed=True)
-    shipDF = pd.read_csv('../working-vars/socat/processed-socat2024/shipDF_ADT_SLA_socatv2024_1d_pCO2converted_co2sys_acc20260203.csv', index_col=0)
-    shipDF['cluster'] = np.tile(np.nan, len(shipDF))
 
-    # Calculate delta pco2 based on chosen float parameter
-    floatDF['pco2'] = floatDF.reset_index()[('pCO2_' + float_param)]
-    floatDF['delta_pco2'] = floatDF['pco2'] - floatDF['pco2_atm']
-    # floatDF 
+    # shipDF = pd.read_csv('../working-vars/socat/processed-socat2024/shipDF_ADT_SLA_socatv2024_1d_pCO2converted_co2sys_acc20260203.csv', index_col=0)
+    # shipDF['cluster'] = np.tile(np.nan, len(shipDF))
+
+    # # Calculate delta pco2 based on chosen float parameter
+    # floatDF['pco2'] = floatDF.reset_index()[('pCO2_' + float_param)]
+    # floatDF['delta_pco2'] = floatDF['pco2'] - floatDF['pco2_atm']
+    # floatDF
+
+    # Output of 2.0. Has mld, adt, pco2 
+    filepath = '../working-vars/regression/inputs/test-bgcArgo/'
+    test_bgcArgo_2024 = pd.read_csv(filepath + 'test_bgcArgo2024_processed_pCO2_pHbias5_pK1_mld_adt_acc20260211.csv', index_col=0) 
+
     return [floatDF, shipDF]
     # = pd.read_csv('../working-vars/argo/processed-SOCCOM-20m/soccomDF_avg20m_withMLD_ADT_acc20260203.csv', index_col=0)
 
@@ -429,3 +537,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# %%

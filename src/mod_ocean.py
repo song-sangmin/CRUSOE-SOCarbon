@@ -26,8 +26,9 @@ def ytd2datetime(num, ref_time):
     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
 
 def add_decimalyr(df):
+    """ for colocating atmospheric pco2 from MBL"""
     df = df.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    df['datetime'] = df['datetime'].astype('datetime64[ns]') # pd.to_datetime(df['datetime'])
     df['decimalyr'] = (
         df['datetime'].dt.year +
         (df['datetime'].dt.dayofyear - 1) /
