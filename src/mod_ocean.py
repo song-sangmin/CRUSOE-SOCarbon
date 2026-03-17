@@ -25,6 +25,17 @@ def ytd2datetime(num, ref_time):
     """
     return (num * np.timedelta64(1,'D')) + np.datetime64(ref_time)
 
+def add_decimalyr(df):
+    """ for colocating atmospheric pco2 from MBL"""
+    df = df.copy()
+    df['datetime'] = df['datetime'].astype('datetime64[ns]') # pd.to_datetime(df['datetime'])
+    df['decimalyr'] = (
+        df['datetime'].dt.year +
+        (df['datetime'].dt.dayofyear - 1) /
+        (df['datetime'].dt.is_leap_year.replace({True: 366, False: 365}))
+    )
+    return df
+
 def get_ydsines(yearday):
     """ For adding seasonal variable in Training_RandomForest.ipynb"""
     yearday = yearday%365.25
@@ -310,6 +321,9 @@ def array_TSbin(df, nbins, var='oxygen', stat='count'):
     return arr
 
 # %% Calculated variables
+
+# def add_mld(platDS, indexer='profid'):
+
 def add_Pchip_buoyancy(plat_DF):
     """
     Calculate buoyancy (actually Nsquared using gsw) 

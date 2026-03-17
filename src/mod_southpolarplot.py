@@ -11,6 +11,35 @@ import mod_plotting as myplt
 
 import shapefile
 
+# %% SIMPLEST SOUTH POLAR PLOT 
+
+def map_platformDF(platDF, ax=None, figsize=(9,9), dotsize=0.5, markerscale=8, dotalpha=0.5, dotcolor='r', label='',
+                   vmin=None, vmax=None,
+                   add_gridlabels = False):
+
+    if ax == None:
+        fig = plt.figure(figsize=figsize, layout='constrained')
+        ax = plt.subplot(projection=ccrs.SouthPolarStereo())
+
+    format_southpolar(ax)
+
+    if vmin == None:
+        ax.scatter(platDF.longitude, platDF.latitude, alpha=dotalpha, s=dotsize, 
+                transform=ccrs.PlateCarree(), zorder=10,
+                label=(label), c=dotcolor)
+    else:           
+        ax.scatter(platDF.longitude, platDF.latitude, alpha=dotalpha, s=dotsize, 
+                    transform=ccrs.PlateCarree(), zorder=10,
+                    label=(label), c=dotcolor, vmin=vmin, vmax=vmax)
+
+    ax.add_patch(fronts_patch('sie')) #sie
+
+    if len(label) >0:
+        ax.legend(loc='upper right', markerscale=markerscale)
+
+    return ax
+
+# %% MAIN FORMATTING FUNCTIONS
 
 def format_southpolar(ax, 
 
@@ -22,7 +51,7 @@ def format_southpolar(ax,
     fontsize:              float = 10,
     map_facecolor:         str   = 'white',
     coast_linewidth:       float = 0.3,
-    gridlines_linewidth:   float = 0.5,
+    gridlines_linewidth:   float = .7,
     gridlines_color:       str   = 'grey',
     gridlines_alpha:       float = 0.5,
     longitude_label_color: str   = 'grey',
@@ -46,8 +75,6 @@ def format_southpolar(ax,
     ax.set_facecolor(map_facecolor)
     plot_circle_boundary(ax)
 
-
-    ### Add gridlines (if True)
     if add_gridlines:
         ax.gridlines(color = gridlines_color, alpha = gridlines_alpha, linewidth = gridlines_linewidth)
         
@@ -69,13 +96,59 @@ def format_southpolar(ax,
         # for locations of (meridional/longitude) labels
         lond = np.linspace(-180, 180, num_merid)
         latd = np.zeros(len(lond))
+    # if add_gridlines:
 
+    #     dmeridian = 60
+    #     dparallel = 20
+
+    #     meridians = np.arange(-180, 180 + dmeridian, dmeridian)
+    #     parallels = np.arange(-90, max_latitude + dparallel, dparallel)
+
+    #     gl = ax.gridlines(
+    #         crs=ccrs.PlateCarree(),
+    #         xlocs=meridians,
+    #         ylocs=parallels,
+    #         linestyle='-',
+    #         linewidth=0.5,
+    #         color='grey',
+    #         alpha=gridlines_alpha
+    #     )
+
+    #     degree_symbol = u"\N{DEGREE SIGN}"
+
+    #     # --- Longitude labels (place at outer latitude boundary) ---
+    #     for lon in meridians:
+    #         ax.text(
+    #             lon,
+    #             max_latitude,
+    #             f"{int(lon)}{degree_symbol}",
+    #             transform=ccrs.PlateCarree(),
+    #             ha='center',
+    #             va='bottom'
+    #         )
+
+    #     # --- Latitude labels (place along one meridian, e.g. 0°) ---
+    #     for lat in parallels:
+    #         if lat > -90:
+    #             ax.text(
+    #                 0,
+    #                 lat,
+    #                 f"{int(abs(lat))}{degree_symbol}S",
+    #                 transform=ccrs.PlateCarree(),
+    #                 ha='left',
+    #                 va='center'
+    #             )
         
     ### Add in coastlines/features
     if color_land:
-        ax.add_feature(cfeature.LAND, zorder=1, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
+        ax.add_feature(cfeature.LAND, zorder=35, linewidth = coast_linewidth, edgecolor=land_edgecolor, facecolor=land_facecolor)
     else:
-        ax.coastlines(resolution = "50m", zorder=1, linewidth = coast_linewidth)
+        ax.coastlines(resolution = "50m", zorder=5, linewidth = coast_linewidth)
+
+    # add sea ice zone
+    ax.add_patch(fronts_patch('sie')) #sie
+
+    return ax
 
 def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie']):
     """ 
@@ -95,25 +168,27 @@ def fronts_patch(type='stf'):
         result  = plt.Polygon(saf,  fill=False, edgecolor='grey',   zorder=14)
     if 'pf' == type:
         pf   = so_fronts.shape(2).points
-        result   = plt.Polygon(pf,   fill=False, edgecolor='grey',    zorder=13)
+        result   = plt.Polygon(pf,   fill=False, edgecolor='grey',    zorder=0) #, facecolor='yellow', alpha=0.2)
     if 'sacc' == type:
         sacc = so_fronts.shape(3).points
-        result = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=12)
+        result = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=1) #, alpha=0.1) #, facecolor='white')
     if 'sie' == type:
         sie  = so_fronts.shape(4).points
-        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=0,  facecolor='darkgrey', alpha=0.4)
+        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=10,  facecolor='lightgray', alpha=1)
+
+
     return result
 
 
 ### Make SO plot boundary a circle
 def plot_circle_boundary(ax) -> None:
     """
-    Make SO plot boundary a circle.
-    Compute a circle in axes coordinates, which we can use as a boundary for the map.
-    We can pan/zoom as much as we like - the boundary will be permanently circular.
+    Make SO plot boundary a circle
     """
     theta  = np.linspace(0, 2 * np.pi, 100)
     center, radius = [0.5, 0.5], 0.5  ## could use 0.45 here, as Simon Thomas did
     verts  = np.vstack([np.sin(theta), np.cos(theta)]).T
     circle = mpath.Path(verts * radius + center)
     ax.set_boundary(circle, transform = ax.transAxes)
+
+
