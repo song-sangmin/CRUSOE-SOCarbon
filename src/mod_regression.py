@@ -337,18 +337,23 @@ def separate_platforms(platDF_combined):
 def fit_single_RFR(feat_list, 
               trainingDF, 
               var_predict = 'delta_fco2',
+              algorithm ='RFR',
               loss_criterion = 'squared_error',
-              ntrees=1000, max_feats = 1/3, min_samples_split=5):
+              ntrees=1000, max_feats = 1/3, min_samples_split=5,
+              booster= 'gbtree', tree_method='approx'):
     """ 
     Fit single RFR for a class. 
     Compute validation errors later 
     """
-    Mdl = RandomForestRegressor(ntrees, max_features = max_feats, random_state = 0, 
-                                criterion = loss_criterion,
-                                bootstrap=True, min_samples_split=min_samples_split)
-        #  max_features: use at most X features at each split (m~sqrt(total features))
 
-    
+    if algorithm == 'RFR':
+        Mdl = RandomForestRegressor(ntrees, max_features = max_feats, random_state = 0, 
+                                    criterion = loss_criterion,
+                                    bootstrap=True, min_samples_split=min_samples_split)
+    elif algorithm == 'XGB':
+        Mdl = XGBRegressor(n_estimators=ntrees, 
+                          booster = booster, 
+                          tree_method=tree_method)
 
     trainingDF= trainingDF.dropna(subset=feat_list).copy()
 
@@ -803,7 +808,7 @@ def print_errors_restrictdepth(data, var ='test_relative_error', pres_lim= [0,10
 from scipy import stats
 
 def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'delta_pco2'):
-    """ @param  data_byClass """
+    """ @param  """
     
     # New version as of Mar 1 2026
     calibrated_valDF = valDF.copy()
@@ -820,7 +825,10 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'del
 
     calibrated_valDF['calibrated_error'] = calibrated_valDF['lincal_pred'] - calibrated_valDF[target_var]
     calibrated_valDF['calibrated_relative_error'] = calibrated_valDF['calibrated_error'] / calibrated_valDF[target_var]
-       
+    
+    return calibrated_valDF
+
+
     # === Version as of Feb 10 2026 (outdated)
     # Apply the calibration to the weighted prediction 
     # data_byClass = {ncluster:df for ncluster, df in valDF.groupby('cluster')}
@@ -840,19 +848,6 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'del
     
     # return data_byClass
     return calibrated_valDF
-
-
-# # Make final predictions by weighting by class probabilities
-# def weighted_prediction(row, ind_list):
-#     """ ind_list or k_list is range(1,n_gmm+1)
-#     """
-#     total = 0
-#     for k in ind_list:
-#         prob_col = 'cluster' + str(k) + '_prob'
-#         pred_col = 'cluster' + str(k) + '_pred'
-#         total += row[prob_col] * row[pred_col]
-#     return total
-
 
 
 def get_clustered_calibration_coeffs(valDF):

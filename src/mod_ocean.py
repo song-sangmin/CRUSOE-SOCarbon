@@ -62,6 +62,12 @@ def expand_datetime(data, type='dataframe'):
 
 # %% Spatial functions (from 0.1_SOCAT)
 
+def fix_longitude_range(df):
+    """ Switch from 0-360 to -180,180 range"""
+    inds = df['longitude']>180
+    df.loc[inds, 'longitude'] = df.loc[inds, 'longitude'].apply(lambda x: x-360)
+
+    return df
 # def weighted_distance(lon_arr, lat_arr, Lx, Ly):
 #     """  Used in Diagnostic_SOCAT
 #     @param:

@@ -150,13 +150,13 @@ def format_southpolar(ax,
 
     return ax
 
-def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie']):
+def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie'], sie_alpha=0.5):
     """ 
     Pass an axis with SouthPolarStereo projection, add specified fronts"""
     for type in types:
-        ax.add_patch(fronts_patch(type))
+        ax.add_patch(fronts_patch(type, sie_alpha))
 
-def fronts_patch(type='stf'):
+def fronts_patch(type='stf', sie_alpha=0.5, sie_zorder=1):
     so_fronts = shapefile.Reader('./shapefiles/fronts/so_fronts.shp') 
     stf_mod   = shapefile.Reader('./shapefiles/fronts/stf_mod/stf_mod.shp')
 
@@ -174,7 +174,7 @@ def fronts_patch(type='stf'):
         result = plt.Polygon(sacc, fill=False, edgecolor='grey',  zorder=1) #, alpha=0.1) #, facecolor='white')
     if 'sie' == type:
         sie  = so_fronts.shape(4).points
-        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=10,  facecolor='lightgray', alpha=1)
+        result  = plt.Polygon(sie,  fill=True,  edgecolor='grey',   zorder=sie_zorder,  facecolor='lightgray', alpha=sie_alpha)
 
 
     return result
