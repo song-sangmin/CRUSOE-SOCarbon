@@ -25,11 +25,11 @@ import mod_southpolarplot as sopo
 # light version for black background
 gmm_palette = [
     "#83DAFF",  # dark blue   
-    "#E47C8D",  # rose
     "#DDCC77",  # sand
+    "#E47C8D",  # rose
     "#44CFC8",  # teal
     "#F3AF50",   # wine
-    "#999933",  # olive
+    "#C5BFFF",  # olive
     "#11703E"  # green
 ]
 my_params = myplt.my_params(size=12, font_family='Futura', title_size=14)

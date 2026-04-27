@@ -2,6 +2,7 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
+import pyproj
 import os
 from datetime import datetime, timedelta
 import mod_loading as loader
@@ -9,9 +10,18 @@ import mod_loading as loader
 import mod_argo
 import mod_ocean
 import gsw
+from tqdm import tqdm
 
 # def print_dict_counts(plat_dict):
 # %% miscellaneous useful
+
+def print_bounds(platDF):
+    # print('Bounds of data: \n')
+    print('Number of observations: ' + str(len(platDF)))
+    print('Dates: \t\t' + str(platDF.datetime.min()) + ' to ' + str(platDF.datetime.max()))
+    # print('Latitude:\t' + str(platDF.latitude.min()) + ' to ' + str(platDF.latitude.max()))
+    # print('Longitude:\t' + str(platDF.longitude.min()) + ' to ' + str(platDF.longitude.max()))
+
 
 def match_profid_from_datetag(soccomDF, floatINDEX):
     """ 
@@ -46,9 +56,10 @@ def index_by_prof_datetag(platDF):
     finder['datetime'] = finder['datetime'].astype('datetime64[ns]')
     finder['prof_datetag'] = finder['profid'].apply(lambda x: str(x).split('_')[0])
     finder['prof_datetag'] = finder.apply(lambda row: row.prof_datetag + '_' + row.datetime.strftime('%Y%m%d'), axis=1)
-    finder_index = finder.reset_index().groupby('prof_datetag').first()
+    # finder['prof_datetag'] = finder.apply(lambda row: row.prof_datetag + '_' + row.datetime[:10].replace('-',''), axis=1)
+    # finder_index = finder.reset_index().groupby('prof_datetag').first()
 
-    return finder_index
+    return finder
 
 def add_mixedlayer_pressure(platINDEX, platDS):
     """ Originally from 2.0_process_pco2_data
@@ -67,6 +78,13 @@ def add_mixedlayer_pressure(platINDEX, platDS):
     platDS['mlp'] = xr.DataArray(plat_mlps.mlp.values, dims='profid')
 
     return platINDEX, platDS
+
+
+def lon_180_to_360(platDF):
+    """ Convert longitude from -180 to 180 to 0 to 360 for matching with NCEP sea level pressure data
+    """
+    platDF['longitude'] = platDF['longitude'].apply(lambda x: x if x >=0 else x + 360)
+    return platDF
 
 # %% P1-processed : Making pd Dataframes ready for regression
 
@@ -160,6 +178,9 @@ def convert_co2_ppm_to_pco2(platDF, ppm_col='atmos_co2_ppm'):
                                         axis=1) # in uatm 
 
     return platDF
+
+
+
 
 # %% SOCAT FUNCTIONS (2.0)
 
@@ -315,6 +336,98 @@ def get_row_adt(row, adt_year_data):
                         method='nearest').adt.values.tolist()
 
 
+# %% ERA5 wind speed
+
+
+def get_row_windspeed(row, wind_year_data):
+    nearest = wind_year_data.sel(longitude=row.longitude, latitude=row.latitude, valid_time = row.datetime,
+                        method='nearest')
+    return (nearest['u10'].values, nearest['v10'].values)
+
+
+def add_wind_speed(platDF, year_range = range(2014,2025)): 
+    wind_dict = {k:None for k in [i for i in year_range]}
+    for yr in year_range:
+        yearly_era5 = xr.open_dataset('../climatedatastore/era5_winds_' + str(yr) + '.nc')
+        # yearly_era5 = xr.open_dataset('/Volumes/ocean-repo/era5_wind_speed_' + str(yr) + '.nc')
+        
+        wind_dict[yr] = yearly_era5
+    
+    platDF =  mod_ocean.expand_datetime(platDF, type='dataframe') # shipDF
+    platDF_annual = {k:df for k, df in platDF.groupby('year')}
+    for yr in tqdm(year_range):
+        temp = platDF_annual[yr].copy()
+        temp['wind_components'] =  temp.apply(lambda row: get_row_windspeed(row, wind_dict[yr]), axis=1)
+        temp['wind_speed'] = temp['wind_components'].apply(lambda x: np.sqrt(x[0]**2 + x[1]**2))
+        platDF_annual[yr] = temp
+    platDF_added = pd.concat(platDF_annual.values(), axis=0)
+
+    return platDF_added
+
+# %% SOLAR RADIATION
+from solarpy import irradiance_on_plane
+def get_solar_radiation(row):
+    vnorm = np.array([0, 0, -1])  # plane pointing zenith
+    h = 0  # sea-level
+    return irradiance_on_plane(vnorm, h, row['datetime'], row['latitude'])
+
+def get_max_solar_radiation(row):
+    vnorm = np.array([0, 0, -1])  # plane pointing zenith
+    h = 0  # sea-level
+
+    list = []
+    for buffer in range(-12,13):
+        time = row['datetime'] + timedelta(hours=buffer)
+        list.append(irradiance_on_plane(vnorm, h, time, row['latitude']))
+
+    return max(list)
+
+
+def add_solar_radiation(platDF, daily_max=False):
+    # platDF['datetime'] = pd.to_datetime(platDF['datetime'], format='%Y-%m-%d %H:%M:%S')
+    platDF['datetime'] = platDF['datetime'].astype('datetime64[ns]')
+    if daily_max:
+        platDF['max_solar_rad'] = platDF.apply(get_max_solar_radiation, axis=1)
+    else:
+        platDF['solar_rad'] = platDF.apply(get_solar_radiation, axis=1)
+
+    return platDF
+
+
+
+# %% CDR NSIDC SEA ICE
+
+
+def get_nearest_seaice(row, seaice_year_data, transformer):
+    # transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3412", always_xy=True)
+    x_meters, y_meters = transformer.transform(row.longitude, row.latitude)
+    nearest_value = seaice_year_data.sel(x=x_meters, y=y_meters, time = row.datetime, method='nearest')['cdr_seaice_conc'].values
+    return nearest_value
+
+
+def add_sea_ice(platDF, year_range = range(2014,2025)): 
+    """ NSIDC CDR sea ice, 25km resolution, daily """
+    ice_dict = {k:None for k in [i for i in year_range]}
+    for yr in year_range:
+        yearly_ice = xr.open_dataset('/Volumes/crusoe-repo/data/nsidc-seaice/sic_pss25_' + str(yr) + '0101-' + str(yr) + '1231_v06r00.nc')
+        ice_dict[yr] = yearly_ice
+    
+    platDF =  mod_ocean.expand_datetime(platDF, type='dataframe') # shipDF
+    platDF_annual = {k:df for k, df in platDF.groupby('year')}
+
+    transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3412", always_xy=True)
+
+    for yr in tqdm(year_range):
+        temp = platDF_annual[yr].copy()
+        temp['sea_ice'] =  temp.apply(lambda row: get_nearest_seaice(row, ice_dict[yr], transformer), axis=1)
+        platDF_annual[yr] = temp
+
+    platDF_added = pd.concat(platDF_annual.values(), axis=0)
+    return platDF_added
+
+
+
+# 
 # OLD
 # def process_soccom_20m_clusters(bgcDS, use_var='pCO2_pHbias5_pK1', start_date = '2013-12-31', end_date = '2023-12-31'): #, use_cols=None):
 #     """ 

@@ -130,6 +130,9 @@ def process_argo_float(float_df, bgc_list = ['pH'], ref_time = '2014-01-01'):
     prof = [tag.zfill(3) for tag in float_df['cycle_number'].astype(str)]
     float_df['profid'] = [str(float_df.wmoid[0]) + '_id' + tag for tag in prof]
 
+    # datetags = float_df['datetime'].strftime('%Y%m%d%H%M')
+    # float_df['prof_datetag'] = [str(float_df.wmoid[0]) + '_id' + tag for tag in prof]
+
     # Add calculated variables using gsw
     float_df['SA']= gsw.SA_from_SP(float_df['salinity'],float_df['pressure'],float_df['longitude'],float_df['latitude'])
     float_df['CT'] = gsw.CT_from_t(float_df['SA'], float_df['temperature'], float_df['pressure']) 
@@ -156,6 +159,25 @@ def process_argo_float(float_df, bgc_list = ['pH'], ref_time = '2014-01-01'):
 
     return float_df[output_vars]
 
+def reindex_by_datetag(platData, type='dataset'):
+    if type == 'dataset':
+        platform_id = [pid.split("_")[0] for pid in platData['profid'].values]
+        datetag = [x[:10].replace('-','') for x in platData['datetime'].values]
+
+        prof_datetag = [f"{p}_{d}" for p, d in zip(platform_id, datetag)]
+
+        platData = platData.assign_coords(prof_datetag=("profid", prof_datetag))
+        platData = platData.swap_dims({"profid": "prof_datetag"})
+        platData = platData.drop_vars("profid")
+
+    # if type == 'dataframe':
+    else:
+        temp = platData.reset_index()
+        temp['prof_datetag'] = temp.apply(lambda row: row.profid[:8] + row.datetime[:10].replace('-',''), axis=1)
+        temp = temp.drop(columns='index')
+        platData = temp.set_index(['prof_datetag', 'pressure'])
+
+    return platData
 
 # def process_core_float(float_df, var_list = 'phys', ref_time = '2014-01-01'):
 #     """
@@ -246,7 +268,7 @@ def to_xr_dataset(argoDF, nc_attrs={'date':str(datetime.datetime.now())}):
     """ 
     Convert float Dataframe to Dataset, and assign title and source attributes.
     """
-    temp = xr.Dataset.from_dataframe(argoDF.set_index(["profid", 'pressure']))
+    temp = xr.Dataset.from_dataframe(argoDF) # .set_index(["profid", 'pressure']))
     # argo_INDEX = temp.mean(dim='pressure')
 
     # argo_DS = temp.set_coords([ 'wmoid', 'datetime', 'yearday', 'latitude', 'longitude'])
@@ -570,7 +592,8 @@ def find_nearest_float(platDF, argoINDEX, yd_window = 7, ref_time = '2014-01-01'
                                             [platDF.loc[idx,'longitude'], x.longitude], 
                                             [platDF.loc[idx,'latitude'], x.latitude], 
                                             Lx=Lx, Ly=1), axis=1)
-            imin = argoDF.idxmin(skipna=True).weighted_dist
+            # imin = argoDF.idxmin(skipna=True).weighted_dist   # old version jan 2026
+            imin = argoDF.sort_values(by='weighted_dist').index.values[0]   # new version mar 2026
             
             # Store metrics of nearest profile ID
             colocation.loc[idx, 'nearest_profid'] = imin

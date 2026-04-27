@@ -25,11 +25,23 @@ def import_core_data(type='L3_only'):
     """
     filepath = '/Volumes/crusoe-repo/data/core/L3-interp/'
     coreINDEX = xr.open_dataset(filepath + 'coreINDEX_valid_interp_2014-2023_acc20250424.nc')
-    
+   
+
     if type == 'L3_only': # original data used before clustering
         coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2023_acc20250424.nc')
 
-    elif type == 'processed': # # with MLD added
+    elif type == 'L3_extended': # original ten-year plus 2024 data (L3_only + 2024)
+        # Extended record to 2024, for clustering SOCAT 2024 test data
+        coreINDEX = xr.open_dataset(filepath + 'coreINDEX_valid_interp_2014-2024_acc20260325.nc')
+        # coreDS = xr.open_dataset(filepath + 'coreDATA_valid_interp_2014-2024_acc20260325.nc')
+        coreDS = xr.open_dataset(filepath + '/coreDATA_valid_interp_MLD_2014-2024_acc20260325.nc')
+    
+    elif type == '2024': # for clustering, so that socat2024 test data can be used
+        # includes mld
+        coreINDEX = xr.open_dataset(filepath + 'coreINDEX_test_valid_interp_MLD_2024only_acc20260327.nc')
+        coreDS = xr.open_dataset(filepath + 'coreDATA_test_valid_interp_MLD_2024only_acc20260327.nc')
+
+    elif type == 'processed': # # with MLD and ADT added
         # BEST VERSION AS OF FEB 6
         # These are in xr Dataset format
         folder = '../working-vars/L4-datasets/'
@@ -96,12 +108,15 @@ def import_bgc_data(type = 'L3_only'):
 # def import_float_20m_data():
 
 
-def import_socat_L2():
+def import_socat_L2(version='v2024'):
     # Masked to open ocean south of 35S
     filepath = '/Volumes/crusoe-repo/data/socat/L2-mask/' 
 
     # new resample at 1d resolution jan 2 in 0.1_socat2024 processing
-    socat = xr.open_dataset(filepath + 'SOCATv2024_SO_1d_open_ocean_INDEX_acc20260102.nc')
+    if version == 'v2024':
+        socat = xr.open_dataset(filepath + 'SOCATv2024_SO_1d_open_ocean_INDEX_acc20260102.nc')
+    else: # 'v2025'
+        socat = xr.open_dataset(filepath + 'SOCATv2025_SO_1d_open_ocean_INDEX_acc20260324.nc') # includes socat 2024 test data
 
     # change to linear_time jan 21 2026
     # socat['yearday'] = mod_ocean.datetime2ytd(socat['datetime'].astype('datetime64[ns]'), ref_time='2014-01-01')
@@ -170,15 +185,22 @@ def import_socat_L2():
 
 def import_socat_colocation(buffer_time = '7d'):
     """ 
+    # mar 2026
+    Now using 1.2_processing
+    Colocate to coreindex (2014-2024) using v2025
+    
+
+    # jan 2026 (20260111)
     Used for classification in 1.2_pcm_classify_bgcArgo_ship.ipynb
     Files were created in 0.5_socat2024_colocation.ipynb
     """
     filepath = '../working-vars/socat/colocate-coreArgo/'
-    sepdict_7d = {key:None for key in [str(x) for x in range(2014,2024)]}
+    sepdict_7d = {key:None for key in [str(x) for x in range(2014,2025)]}
 
     for x in os.listdir(filepath):
-        if x.startswith('colocate_7d') & x.endswith('20260111.csv'):
-            sepdict_7d[x[14:18]] = pd.read_csv(filepath+x, index_col=0)
+        if x.startswith('colocate_v2025_validArgo_7d') & x.endswith('20260327.csv'):
+            # sepdict_7d[x[14:18]] = pd.read_csv(filepath+x, index_col=0)
+            sepdict_7d[x[30:34]] = pd.read_csv(filepath+x, index_col=0)
             # print('Imported data for _7d window: ' + x)
 
     sepstat_7d = pd.concat(sepdict_7d.values()).reset_index().drop(['level_0', 'index'], axis=1)
@@ -194,22 +216,36 @@ def import_p1_processed():
     """
     print('Importing processed dataframes...')
     folder = '../working-vars/regression/P1-processed/'
+
+    # Version with mld, adt, but not sea ice or wind speed
     datetag = '20260211'
-    bgcArgo_trainval = pd.read_csv(folder + 'bgcArgo_trainval_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2014-2023_acc' + datetag + '.csv', index_col=0)
-    bgcArgo_test = pd.read_csv(folder + 'bgcArgo_test_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2024_acc' + datetag + '.csv', index_col=0)
-    socat_trainval = pd.read_csv(folder + 'socat_trainval_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
+    # bgcArgo_trainval = pd.read_csv(folder + 'bgcArgo_trainval_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2014-2023_acc' + datetag + '.csv', index_col=0)
+    # bgcArgo_test = pd.read_csv(folder + 'bgcArgo_test_processed_co2_mld_adt_soccom20m_pCO2_pHbias5_pK1_yr2024_acc' + datetag + '.csv', index_col=0)
+    # socat_trainval = pd.read_csv(folder + 'socat_trainval_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
     coreArgo_application = pd.read_csv(folder + 'coreArgo_application_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
 
-    output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
+    # Newer version with sea icea nd wind speed, march 2026
+    socat_test = pd.read_csv(folder + 'socatv2025_test_processed_co2_yr2024_acc20260327.csv', index_col=0)
+    socat_trainval = pd.read_csv(folder + 'socatv2025_trainval_processed_co2_yr2014-2023_acc20260327.csv', index_col=0)
+    bgcArgo_trainval = pd.read_csv(folder + 'bgcArgo_trainval_processed_co2_soccom20m_pCO2_pHbias5_pK1_yr2014-2023_acc20260327.csv', index_col=0)
+    bgcArgo_test = pd.read_csv(folder + 'bgcArgo_test_processed_co2_soccom20m_pCO2_pHbias5_pK1_yr2024_acc20260327.csv', index_col=0)
+
+    ### CHANGE THIS TO UPDATED FILE NAME FROM 1.0_RUN
+    # coreArgo_application = pd.read_csv('../working-vars/regression/P1-processed/coreArgo_2014-2024_temporary_icefraction.csv', index_col=0)
+
+
+
+    output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, socat_test, coreArgo_application]
     for df in output:
         df['datetime'] = pd.to_datetime(df['datetime'])
 
-    print('Returned [bgcArgo_trainval(2014-2023), bgcArgo_test(2024), socat_trainval(2014-2023), coreArgo_application(2014-2023)]')
+    print('Returned [bgcArgo_trainval(2014-2023), bgcArgo_test(2024), ' \
+                    'socat_trainval(2014-2023), socat_test(2024), coreArgo_application(2014-2023)]')
     return output # [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
 
 # %% CLUSTERING
 
-def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6'):
+def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6', datetag = '20260327'):
     """ 
     Updated clustering after preprocessing Feb 11 2026
 
@@ -220,40 +256,59 @@ def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6'):
     if type == 'pcm_probs':
         # outut from 2.1_PCM
         print('Importing clustering results for ' + pcm_params + '...')
-        if pcm_params == 'pc8_gmm6': datetag = '20260211'
+        # if pcm_params == 'pc8_gmm6': datetag = '20260211' # feb 2026
+        # if pcm_params == 'pc8_gmm6': datetag = '20260327' # march 2026. newer version with 2024 core included
 
         PCM_components = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
         PCM_finder = pd.read_csv(filepath + 'PCM_finder_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
         # allprobs = pd.read_csv(filepath + 'postprobs_' + pcm_params + '_' + datetag + '.csv')  # already reindexed at 1
-        PCM_finder = PCM_finder.set_index('profid')
+
+        # comment on for feb 2026
+        if datetag == '20260211':
+            PCM_finder = PCM_finder.set_index('profid')
         print('Returned [PCM_components, PCM_finder (probabilities)]')
 
         output = [PCM_components, PCM_finder]
 
     elif type == 'class-gapfilled': #
+        # use datetag 0211 for before adding sea ice and adt
         #output from 2.2_PCM
         print('Importing processed Dataframes with gap-filled classes; ' + pcm_params + '...')
-        datetag = '20260211'
+        # datetag = '20260327'
         bgcArgo_trainval = pd.read_csv(filepath + 'P2_bgcArgo-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
         bgcArgo_test = pd.read_csv(filepath + 'P2_bgcArgo-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
         socat_trainval = pd.read_csv(filepath + 'P2_socat-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
-        coreArgo_application = pd.read_csv(filepath + 'P2_coreArgo-applicationDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        socat_test = pd.read_csv(filepath + 'P2_socat-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
        
+        # Split up socat_all (used to only be until 2023, switching to v2025 in mar 2026)
+        # socat_all['datetime'] = pd.to_datetime(socat_all['datetime'])
+        # socat_test = socat_all[socat_all['datetime'].dt.year == 2024].copy() # for now, use trainval with 2024 test data. will need to update when new version with sea ice and adt is ready
+        # socat_trainval = socat_all[socat_all['datetime'].dt.year < 2024].copy()
+        
+        # datetag = '20260211'
+        coreArgo_application = pd.read_csv(filepath + 'P2_coreArgo-applicationDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        # bgcArgo_trainval = pd.read_csv(filepath + 'P2_bgcArgo-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        # bgcArgo_test = pd.read_csv(filepath + 'P2_bgcArgo-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        # socat_trainval = pd.read_csv(filepath + 'P2_socat-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+        # socat_test = pd.DataFrame()
+
        # The bgcArgo core profiles are still in coreArgo_application, but need to exclude ones that have associated bgc obs
         shared_profids = set(bgcArgo_trainval.index).intersection(set(coreArgo_application.index))
         core_only_profids = set(coreArgo_application.index) - set(shared_profids) # profids without associated 
         coreArgo_application = coreArgo_application.loc[[*core_only_profids]]
 
-        output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application]
-        for df in output:
-            df['datetime'] = pd.to_datetime(df['datetime'])
+        output = [bgcArgo_trainval, bgcArgo_test, socat_trainval, socat_test, coreArgo_application]
+        
+        # for df in output:
+        #     df['datetime'] = pd.to_datetime(df['datetime'])
+            # df.loc[df.sea_ice.isna(), 'sea_ice'] = 0
+            # print('Filled nan sea ice with 0s.')
 
-    print('Returned [bgcArgo_trainval(2014-2023), bgcArgo_test(2024), socat_trainval(2014-2023), coreArgo_application(2014-2023)]')
-    return output # [bgcArgo_trainval, bgcArgo_test, socat_trainval, coreArgo_application] = import_p2_clustered(type = 'class-gapfilled', pcm_params='pc8_gmm6')
+    return output 
 
 
 def import_p3_trainval(pcm_desc = 'pc8_gmm6_excludeClass5'):
-    """ same as P3 but with any excluded classes removed 
+    """ same as P2 but with any excluded classes removed 
     """
     folder = '../working-vars/regression/P3-trainval/'
     trainvalDF_all = pd.read_csv(folder + 'P3-trainval_bgcArgo_SOCAT_2014-2023_' + 

@@ -103,7 +103,7 @@ gmm_palette = [
 
 def setup_TS_contours(df, ax=None, contour_font_size=12):
     """  
-    Add T-S contours to a given axis.
+    Add T-S contours to given axis
     @param: df: dataframe with 'CT' and 'SA' as columns
     """
 
@@ -111,29 +111,25 @@ def setup_TS_contours(df, ax=None, contour_font_size=12):
         fig = plt.figure(figsize=(9,7))
         ax = fig.gca()
 
-    # Add density contours
-    # Figure out boudaries (mins and maxs)
+    # Set T, S bounds
     smin = df.SA.min() -.2
     smax = df.SA.max() +.2
-
     tmin= df.CT.min() - 1.2
     tmax = df.CT.max() + 0.5
 
-    # Calculate how many gridcells we need in the x and y dimensions
+    # Set how many gridcells we need in the x and y dimensions
     xdim = int(round((smax-smin)/0.1+1,0))
     ydim = int(round((tmax-tmin)+1,0))
-    
-    # Create empty grid of zeros
     dens = np.zeros((ydim,xdim))
     
-    # Create temp and salt vectors of appropiate dimensions
+    # Create T, S vectors of appropiate dimensions
     ti = np.linspace(1,ydim-1,ydim)+tmin
     si = np.linspace(1,xdim-1,xdim)*0.1+smin
 
     # Loop to fill in grid with densities
-    for j in range(0,int(ydim)):
-        for i in range(0, int(xdim)):
-            dens[j,i]=gsw.sigma0(si[i],ti[j])
+    for temp in range(0,int(ydim)):
+        for sal in range(0, int(xdim)):
+            dens[temp,sal]=gsw.sigma0(si[sal],ti[temp])
 
     CS = ax.contour(si,ti,dens, linestyles='dashed', colors='k', alpha=0.4, zorder=1)
     ax.clabel(CS, fmt='%1.2f', fontsize=contour_font_size)
