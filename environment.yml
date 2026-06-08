@@ -1,0 +1,42 @@
+name: cremas
+channels:
+  - conda-forge
+dependencies:
+  - jupyter-book
+  - jupyterlab
+  - sphinx-pythia-theme
+  - python=3.9
+  - numpy
+  - scipy
+  - pip 
+
+  # Data packages
+  - pandas
+  - xarray
+  - jupyter
+  - netcdf4
+  - gsw
+  - argopy
+  - xhistogram
+
+  # ML Packages
+  - scikit-learn
+
+  # Images
+  - cmocean
+  - plotly
+  - matplotlib
+  - seaborn 
+  - haversine
+  - geopandas
+  - pygam
+  - cartopy
+  - imageio
+  - rasterio
+  - hyperopt
+  - dataframe_image
+
+  - pip: 
+    - argovisHelpers==0.0.26
+    - matplotlib-label-lines
+    - shapefile
