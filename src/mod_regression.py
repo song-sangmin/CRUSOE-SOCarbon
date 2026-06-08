@@ -69,11 +69,35 @@ def subset_training_validation(platDF, indexer = 'wmoid', split_frac = 0.8):
 
 # def subset_folds(platDF, indexer, nfolds):
 
-def subset_folds(platDF, indexer, nfolds):
-    """ returns dictionary of training and validation dataframes for each fold
-    (for single platform)
-    #param:     platDF: dataframe for either floatDF or shipDF
-                indexer: 'cruiseid' for shipDF, 'wmoid' for floatDF
+# from sklearn.cluster import KMeans
+# def subset_spatial_folds(platDF, nfolds):
+#     """ returns dictionary of training and validation dataframes for each fold
+#     (for single platform)
+#     #param:     platDF: dataframe for either floatDF or shipDF
+#                 indexer: 'cruiseid' for shipDF, 'wmoid' for floatDF
+#     @return     fold_training: dictionary with keys 'fold1', 'fold2', ... each containing training dataframe
+#     """
+#     # 
+#     # X = platDF[['latitude', 'longitude']]
+#     fold_training = {('fold'+str(k+1)):None for k in range(nfolds)}
+#     fold_validation = {('fold'+str(k+1)):None for k in range(nfolds)}
+
+#     kmeans = KMeans(n_clusters=nfolds, random_state=42)
+#     platDF['fold'] = kmeans.fit_predict(platDF[['latitude', 'longitude']])
+
+#     for fold in range(nfolds):
+#         fold_validation[f'fold{fold+1}'] = platDF[platDF['fold'] == fold].drop(columns=['fold'])
+#         fold_training[f'fold{fold+1}'] = platDF[platDF['fold'] != fold].drop(columns=['fold'])
+    
+#     return fold_training, fold_validation
+
+def subset_folds(platDF, nfolds):
+    """ 
+    spatial clustering of observations for cross-validation (k-means)
+    returns dictionary of training and validation dataframes for each fold
+    
+    @param:     platDF: dataframe for either floatDF or shipDF
+                
     @return     fold_training: dictionary with keys 'fold1', 'fold2', ... each containing training dataframe
     """
     # Create list of unique profile ID's and select random 80% for training
@@ -96,7 +120,9 @@ def get_trainval_counts(training_classes, validation_classes, n_gmm=8):
     originally from 3.1_clustered_rfr.ipynb 
     @param  training_classes: dict of training dataframes for each cluster
 
-            validation_classes: dict of validation dataframes for each cluster"""
+            validation_classes: dict of validation dataframes for each cluster
+    
+    """
     countobs = pd.DataFrame({'cluster':range(1,n_gmm+1), 
                         'train':[len(k) for k in training_classes.values()],
                         'validation':[len(k) for k in validation_classes.values()]}
@@ -368,7 +394,7 @@ def fit_single_RFR(feat_list,
 
     return Mdl
 
-def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val', 
+def apply_single_RFR(skmodel, feat_list, sampleDF, sample_tag='val', 
                       target_var = 'delta_pco2', target_known = True): 
     """ 
     @param      feat_list list of features in sampleDF to use
@@ -383,10 +409,46 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
         sampleDF['log_mld'] = np.log(sampleDF['mld'])
         feat_list = [x if x != 'mld' else 'log_mld' for x in feat_list]
 
+    # k_list = ClusteredModVer.ind_list
+    # skmodel = ClusteredModVer.models[k]
+
+    pred_col = sample_tag + '_pred'
+    sampleDF[pred_col] = skmodel.predict(sampleDF[feat_list].to_numpy())
+
+    if target_known:
+        sampleDF[sample_tag + '_error'] = sampleDF[pred_col] - sampleDF[target_var]
+        sampleDF[sample_tag + '_relative_error'] = sampleDF[sample_tag + '_error'] / sampleDF[target_var]
+    
+    return sampleDF
+
+
+def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val', 
+                      target_var = 'delta_pco2', 
+                      sea_ice_clusters = None,
+                      target_known = True): 
+    """ 
+    @param      feat_list list of features in sampleDF to use
+                ClusteredModVer: already trained ClusteredModelVersion object
+                sampleDF: dataframe with dataset to get errors on 
+                sample_tag: specify a string (default "val" returns DF with cols 'val_error')
+                            only need if target_known = True
+    """
+    sampleDF = sampleDF.dropna(axis=0, subset=feat_list + [target_var]).copy()
+    
+    if 'mld' in feat_list: # should already be log_mld in feat_list, but catch any missed
+        print('Warning: feature_list includes mld instead of log(mld), transforming...')
+        sampleDF['log_mld'] = np.log(sampleDF['mld'])
+        feat_list = [x if x != 'mld' else 'log_mld' for x in feat_list]
+
     k_list = ClusteredModVer.ind_list
     for k in k_list:
+        if k not in sea_ice_clusters: 
+            class_feat_list = [x for x in feat_list if x != 'sea_ice']
+            # print('No sea ice in class ' + str(k) + ', removing from features for this class')
+        else: class_feat_list = feat_list.copy()
         pred_col = 'cluster' + str(k) + '_pred'
-        sampleDF[pred_col] = ClusteredModVer.models[k].predict(sampleDF[feat_list].to_numpy())
+
+        sampleDF[pred_col] = ClusteredModVer.models[k].predict(sampleDF[class_feat_list].to_numpy())
     sampleDF['weighted_pred'] = sampleDF.apply(lambda row: weighted_prediction(row, k_list), axis=1)
 
     if target_known:
@@ -552,6 +614,7 @@ class ClusteredModelVersion:
         self.ind_list = ind_list
         self.feat_list = feat_list
         self.models = {model: None for model in ind_list}
+        self.params = {model: None for model in ind_list}
         # self.DF_err = {model: None for model in ind_list} # validation errors from one class
         self.weighted_training = None
         self.weighted_validation = None
@@ -561,16 +624,17 @@ class ClusteredModelVersion:
         return self
 
 class CrossValContainer:
+    """ Version that assumes n clusters, splitting into k folds"""
     def __init__(self, fold_list, n_clusters):
         self.fold_list = fold_list # ['fold1', ...
 
         self.trainClasses = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
         self.valClasses = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
 
-        self.trainClasses_float = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
-        self.trainClasses_ship = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
-        self.valClasses_float = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
-        self.valClasses_ship = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
+        # self.trainClasses_float = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
+        # self.trainClasses_ship = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
+        # self.valClasses_float = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
+        # self.valClasses_ship = {fold: {k:None for k in range(1, n_clusters+1)} for fold in fold_list}
 
         self.trainDF_all = {fold: None for fold in fold_list}
         self.valDF_all = {fold: None for fold in fold_list}
@@ -578,6 +642,50 @@ class CrossValContainer:
     
     def copy(self):
         return self
+    
+class NestedCrossValContainer: 
+    """ Nested CV version (Schratz 2019) that has an outer loop and inner loop for hyperparameter tuning
+    """
+    def __init__(self, n_outer=5):
+        """ 
+        @ param        n_outer: number of outer folds, spatially grouped
+                        n_inner: number of inner folds, randomly split
+        """
+        fold_list = ['fold' + str(k) for k in range(1, n_outer+1)]
+
+        # Outer folds for main model comparison
+        self.fold_list = fold_list
+        self.trainDF = {fold: None for fold in fold_list} # Collapsed across classes, analogous to trainDF_all in CrossValContainer
+        self.valDF = {fold: None for fold in fold_list}
+
+        # Later, populate this with other NestedCrossValContainer objects for the inner loop of tuning hyperparameters
+        self.inner_nests = {fold:None for fold in fold_list} # ['fold' + str(k) for k in range(1, n_outer+1)]} 
+
+    
+    def copy(self):
+        return self
+
+class NestedModelVersion:
+    """ 
+    Object holding nested CV model runs
+    @ param     fold_list: list of folds, inner or outer
+                
+                models - scikit learn RandomForestRegressor objects
+
+                DF_err - validation DataFrame with estimation errors
+    """
+    def __init__(self, fold_list, feat_list=None):
+        self.fold_list = fold_list
+        self.feat_list = feat_list
+        self.models = {fold: None for fold in fold_list}
+        self.estimates = {fold: None for fold in fold_list}
+        # self.calibrated_validation = None
+    
+    def copy(self):
+        return self
+
+
+
 
 # Make final predictions by weighting by class probabilities
 def weighted_prediction(row, ind_list, pred_col_tag = '_pred'):
