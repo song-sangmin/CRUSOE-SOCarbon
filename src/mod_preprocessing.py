@@ -17,8 +17,8 @@ from tqdm import tqdm
 
 def print_bounds(platDF):
     # print('Bounds of data: \n')
-    print('Number of observations: ' + str(len(platDF)))
-    print('Dates: \t\t' + str(platDF.datetime.min()) + ' to ' + str(platDF.datetime.max()))
+    print('Sample count: ' + '\t' + str(len(platDF)))
+    print('\tDates: \t' + str(platDF.datetime.min()) + ' to ' + str(platDF.datetime.max()))
     # print('Latitude:\t' + str(platDF.latitude.min()) + ' to ' + str(platDF.latitude.max()))
     # print('Longitude:\t' + str(platDF.longitude.min()) + ' to ' + str(platDF.longitude.max()))
 
@@ -348,8 +348,8 @@ def get_row_windspeed(row, wind_year_data):
 def add_wind_speed(platDF, year_range = range(2014,2025)): 
     wind_dict = {k:None for k in [i for i in year_range]}
     for yr in year_range:
-        yearly_era5 = xr.open_dataset('../climatedatastore/era5_winds_' + str(yr) + '.nc')
-        # yearly_era5 = xr.open_dataset('/Volumes/ocean-repo/era5_wind_speed_' + str(yr) + '.nc')
+        # yearly_era5 = xr.open_dataset('../climatedatastore/era5_winds_' + str(yr) + '.nc')
+        yearly_era5 = xr.open_dataset('/Volumes/ocean-repo/era5_wind_speed_' + str(yr) + '.nc')
         
         wind_dict[yr] = yearly_era5
     
@@ -365,7 +365,10 @@ def add_wind_speed(platDF, year_range = range(2014,2025)):
     return platDF_added
 
 # %% SOLAR RADIATION
+
+
 from solarpy import irradiance_on_plane
+
 def get_solar_radiation(row):
     vnorm = np.array([0, 0, -1])  # plane pointing zenith
     h = 0  # sea-level
@@ -381,7 +384,6 @@ def get_max_solar_radiation(row):
         list.append(irradiance_on_plane(vnorm, h, time, row['latitude']))
 
     return max(list)
-
 
 def add_solar_radiation(platDF, daily_max=False):
     # platDF['datetime'] = pd.to_datetime(platDF['datetime'], format='%Y-%m-%d %H:%M:%S')

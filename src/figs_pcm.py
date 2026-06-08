@@ -182,7 +182,7 @@ def boxplot_gmm_probs(class_probs, ax=None, figsize=(9,6),
     list = [x.probability.values for x in class_probs.values()]
 
     bplot = ax.boxplot(list, patch_artist=True, vert=False,
-                    tick_labels = [str(int(x)+1) for x in class_probs.keys()], 
+                    tick_labels = [str(int(x)) for x in class_probs.keys()], 
                     sym='.',
                     flierprops={'color':'grey', 'markersize':1, 'alpha':0.4, 'marker':'.'},
                     medianprops={'color':'crimson', 'linewidth':1.5})
@@ -194,9 +194,10 @@ def boxplot_gmm_probs(class_probs, ax=None, figsize=(9,6),
         
     ax.set_xlabel('Probability')
     ax.set_ylabel('Class')
-    ax.set_yticklabels([str(int(x)+1) for x in class_probs.keys()])
+    ax.set_yticklabels([str(int(x)) for x in class_probs.keys()])
     ax.set_title('GMM posterior probabilities')
     ax.grid(alpha=0.2, zorder=0)
+    ax.invert_yaxis()
     # ax.set_ylim([0,1])
 
 

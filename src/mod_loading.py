@@ -116,7 +116,8 @@ def import_socat_L2(version='v2024'):
     if version == 'v2024':
         socat = xr.open_dataset(filepath + 'SOCATv2024_SO_1d_open_ocean_INDEX_acc20260102.nc')
     else: # 'v2025'
-        socat = xr.open_dataset(filepath + 'SOCATv2025_SO_1d_open_ocean_INDEX_acc20260324.nc') # includes socat 2024 test data
+        # socat = xr.open_dataset(filepath + 'SOCATv2025_SO_1d_open_ocean_INDEX_acc20260324.nc') # includes socat 2024 test data
+        socat = xr.open_dataset(filepath + 'SOCATv2025_SO_1d_open_ocean_INDEX_acc20260518.nc') # 23.5h resample instead of 24 
 
     # change to linear_time jan 21 2026
     # socat['yearday'] = mod_ocean.datetime2ytd(socat['datetime'].astype('datetime64[ns]'), ref_time='2014-01-01')
@@ -185,7 +186,10 @@ def import_socat_L2(version='v2024'):
 
 def import_socat_colocation(buffer_time = '7d'):
     """ 
-    # mar 2026
+    # may 2026
+    Resampled at 23.5h instead of 24h in 0.1_socat_processing
+   
+    # mar 2026 '20260327'
     Now using 1.2_processing
     Colocate to coreindex (2014-2024) using v2025
     
@@ -194,14 +198,15 @@ def import_socat_colocation(buffer_time = '7d'):
     Used for classification in 1.2_pcm_classify_bgcArgo_ship.ipynb
     Files were created in 0.5_socat2024_colocation.ipynb
     """
-    filepath = '../working-vars/socat/colocate-coreArgo/'
+    # filepath = '../working-vars/socat/colocate-coreArgo/'
+    filepath = '/Volumes/crusoe-repo/data/socat/colocate-coreArgo/' 
     sepdict_7d = {key:None for key in [str(x) for x in range(2014,2025)]}
 
     for x in os.listdir(filepath):
-        if x.startswith('colocate_v2025_validArgo_7d') & x.endswith('20260327.csv'):
+        if x.startswith('colocate_v2025_validArgo_7d') & x.endswith('20260518.csv'):
             # sepdict_7d[x[14:18]] = pd.read_csv(filepath+x, index_col=0)
             sepdict_7d[x[30:34]] = pd.read_csv(filepath+x, index_col=0)
-            # print('Imported data for _7d window: ' + x)
+            print('Imported data for _7d window: ' + x)
 
     sepstat_7d = pd.concat(sepdict_7d.values()).reset_index().drop(['level_0', 'index'], axis=1)
 
@@ -225,8 +230,9 @@ def import_p1_processed():
     coreArgo_application = pd.read_csv(folder + 'coreArgo_application_processed_co2_mld_adt_yr2014-2023_acc' + datetag + '.csv', index_col=0)
 
     # Newer version with sea icea nd wind speed, march 2026
-    socat_test = pd.read_csv(folder + 'socatv2025_test_processed_co2_yr2024_acc20260327.csv', index_col=0)
-    socat_trainval = pd.read_csv(folder + 'socatv2025_trainval_processed_co2_yr2014-2023_acc20260327.csv', index_col=0)
+    # may 2026 resampled socat at 23.5h 
+    socat_test = pd.read_csv(folder + 'socatv2025_test_processed_co2_yr2024_acc20260518.csv', index_col=0)
+    socat_trainval = pd.read_csv(folder + 'socatv2025_trainval_processed_co2_yr2014-2023_acc20260518.csv', index_col=0)
     bgcArgo_trainval = pd.read_csv(folder + 'bgcArgo_trainval_processed_co2_soccom20m_pCO2_pHbias5_pK1_yr2014-2023_acc20260327.csv', index_col=0)
     bgcArgo_test = pd.read_csv(folder + 'bgcArgo_test_processed_co2_soccom20m_pCO2_pHbias5_pK1_yr2024_acc20260327.csv', index_col=0)
 
@@ -245,7 +251,7 @@ def import_p1_processed():
 
 # %% CLUSTERING
 
-def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6', datetag = '20260327'):
+def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6', dbar_limit = 501, datetag = '20260327'):
     """ 
     Updated clustering after preprocessing Feb 11 2026
 
@@ -255,12 +261,12 @@ def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6', datetag = '20
 
     if type == 'pcm_probs':
         # outut from 2.1_PCM
-        print('Importing clustering results for ' + pcm_params + '...')
+        print('Importing clustering results for ' + pcm_params + '_' + str(dbar_limit) + '_dbar ' + '...')
         # if pcm_params == 'pc8_gmm6': datetag = '20260211' # feb 2026
         # if pcm_params == 'pc8_gmm6': datetag = '20260327' # march 2026. newer version with 2024 core included
 
-        PCM_components = pd.read_csv(filepath + 'Y_gmm_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
-        PCM_finder = pd.read_csv(filepath + 'PCM_finder_501dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
+        PCM_components = pd.read_csv(filepath + 'Y_gmm_' + str(dbar_limit) + 'dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
+        PCM_finder = pd.read_csv(filepath + 'PCM_finder_' + str(dbar_limit) + 'dbar_' + pcm_params + '_' + datetag + '.csv', index_col=0) # Results of GMM
         # allprobs = pd.read_csv(filepath + 'postprobs_' + pcm_params + '_' + datetag + '.csv')  # already reindexed at 1
 
         # comment on for feb 2026
@@ -277,8 +283,10 @@ def import_p2_clustered(type = 'pcm_probs', pcm_params='pc8_gmm6', datetag = '20
         # datetag = '20260327'
         bgcArgo_trainval = pd.read_csv(filepath + 'P2_bgcArgo-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
         bgcArgo_test = pd.read_csv(filepath + 'P2_bgcArgo-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
-        socat_trainval = pd.read_csv(filepath + 'P2_socat-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
-        socat_test = pd.read_csv(filepath + 'P2_socat-testDF_class-gapfilled_' + pcm_params + '_acc' + datetag + '.csv', index_col=0)
+
+        # datetag 0518 for resampled socat at 23.5h
+        socat_trainval = pd.read_csv(filepath + 'P2_socat-trainvalDF_class-gapfilled_' + pcm_params + '_acc' + '20260518' + '.csv', index_col=0)
+        socat_test = pd.read_csv(filepath + 'P2_socat-testDF_class-gapfilled_' + pcm_params + '_acc' + '20260518' + '.csv', index_col=0)
        
         # Split up socat_all (used to only be until 2023, switching to v2025 in mar 2026)
         # socat_all['datetime'] = pd.to_datetime(socat_all['datetime'])

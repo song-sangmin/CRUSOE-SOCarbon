@@ -12,6 +12,9 @@ import figs_pcm
 from scipy import stats
 from mod_ocean import expand_datetime
 
+res_delta_tag = 'Residual Δ-pCO$_{2}$ (µatm)'
+
+
 def error_kde(data, ax=None, textsize=14, ymax=None, pltcolor='r', 
               linelabel='', linestyle='solid', linealpha = 0.7, lw=2):
     """
@@ -273,3 +276,63 @@ def split_classes(platDF):
 
 # def get_plotting_dict(types=['train', 'val'], platforms=['combined', 'float', 'ship']):
 
+# %% Cross-validation data splitting for k-fold
+
+datatype_colors = {'train' : "#332288", 
+                   'validation' :  "#ED7F1E", 
+                   'combined' : "#524F4F",
+                   'train_comb':  "#332288", 
+                   'val_comb':  "#6EC3EE", 
+                   'train_float': "#882255",  # rose
+                   'val_float': "#DDCC77",  # rose
+                   'train_ship': "#44AA99",  # dark blue
+                   'val_ship': "#CC6677",  # dark blue
+                   }
+
+def plot_kfold(cvtainer, n_clusters, nfolds, plat_type='comb'):
+    # VISUALIZE TRAIN/VAL COUNTS BY FOLD, BY CLASS
+    # === choose which data to restrict to 
+    plat_type = 'comb' 
+    # plat_type = '_float'
+    # plat_type = '_ship'
+
+    trainvar = 'train'; valvar = 'validation'
+    if plat_type in ['_float', '_ship']:
+        trainvar += plat_type; valvar = valvar[:3] + plat_type
+
+    # n_clusters = n_gmm - len(exclude_nums)
+    list_folds = ['fold'+str(k) for k in range(1, nfolds+1)]
+
+
+    # === plot 
+    fig, axs = plt.subplots(1, n_clusters, figsize=(2*n_clusters, 4), sharey='row', layout='constrained')
+
+    for ncluster in range(1,n_clusters+1):
+        plot_data = {
+            trainvar: [cvtainer.countobs[ftag].loc[ncluster, trainvar] for ftag in list_folds],
+            valvar: [cvtainer.countobs[ftag].loc[ncluster, valvar] for ftag in list_folds],
+        }
+
+        x = np.arange(len(list_folds))  # the label locations
+        width = 0.45  # the width of the bars
+        multiplier = 0
+
+        # fig, ax = plt.subplots(layout='constrained')
+
+        ax = axs[ncluster-1]
+
+        for subset_type, nobs in plot_data.items():
+            offset = width * multiplier
+            rects = ax.bar(x + offset, nobs, width, label=subset_type, color=datatype_colors[subset_type])
+            # ax.bar_label(rects, padding=3)
+            multiplier += 1
+
+        # ax.set_xticks(x + width, list_folds)
+        ax.set_xlabel('Fold #')
+        ax.set_title('Class ' + str(ncluster))
+
+    for ax in axs.flatten():
+        ax.set_ylim(0,3000)
+    ax.legend()
+    axs[0].set_ylabel('Counts')
+        # ax.legend(loc='upper left', ncols=3)
