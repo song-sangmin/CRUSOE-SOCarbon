@@ -10,12 +10,12 @@ from   datetime              import date, datetime, timedelta                 # 
 import datetime
 import gsw
 import scipy
-import mod_cremas as crx
+# import mod_cremas as crx
 import matplotlib
 import matplotlib.pyplot     as plt  
 
-import mod_ocean as myocn
-import mod_plotting as myplot
+from crusoe import mod_ocean as myocn
+from crusoe import mod_plotting as myplot
 import importlib
 
 importlib.reload(myplot)
@@ -24,6 +24,8 @@ importlib.reload(myocn)
 plt.rcParams.update(myplot.my_params(size=12))
 
 
+def tester():
+    print('testing editable install')
 # %% Common slicing functions
 # =============================================================================
 

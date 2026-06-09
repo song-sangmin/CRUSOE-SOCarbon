@@ -1,14 +1,14 @@
 import seaborn as sns 
-import mod_ocean as myocn
+from crusoe import mod_ocean as myocn
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.colors     as mpcolors
 import cartopy.crs as ccrs
 
-import mod_plotting as mod_plot
-import mod_regression as mod_reg
-import figs_pcm
+from crusoe import mod_plotting as mod_plot
+from crusoe import mod_regression as mod_reg
+from plotting import figs_pcm
 
 
 # datatype_colors = {'train' : "#006F83", 

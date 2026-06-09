@@ -7,7 +7,7 @@ import cartopy.crs           as     ccrs
 import numpy as np
 from importlib import reload
 
-import mod_plotting as myplt
+from crusoe import mod_plotting as myplt
 
 import shapefile
 

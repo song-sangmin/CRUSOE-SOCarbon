@@ -2,13 +2,13 @@
 
 import matplotlib
 import matplotlib.pyplot     as plt  
-import mod_plotting as myplt
+from crusoe import mod_plotting as myplt
 from   cmocean               import cm as cmo
 import cartopy.crs           as     ccrs    
 from importlib import reload
 
-from mod_ocean import expand_datetime
-import mod_southpolarplot as sopo
+# from mod_ocean import expand_datetime
+from crusoe import mod_southpolarplot as sopo
 
 # tol_palette = myplt.tol8()
 # gmm_palette = [

@@ -5,10 +5,10 @@ import PyCO2SYS as pyco2
 import pyproj
 import os
 from datetime import datetime, timedelta
-import mod_loading as loader
+import notebooks.data_loader as loader
 
-import mod_argo
-import mod_ocean
+from crusoe import mod_argo
+from crusoe import mod_ocean
 import gsw
 from tqdm import tqdm
 

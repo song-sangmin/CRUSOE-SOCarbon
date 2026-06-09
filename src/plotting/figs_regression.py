@@ -6,12 +6,11 @@ import cartopy.crs as ccrs
 import numpy as np
 import scipy as scipy
 
-import mod_plotting as mod_plot
-import mod_regression as mod_reg
-import figs_pcm
+from crusoe import mod_plotting as mod_plot
+from crusoe import mod_regression as mod_reg
+from plotting import figs_pcm
 from scipy import stats
-from mod_ocean import expand_datetime
-
+from crusoe import mod_ocean 
 res_delta_tag = 'Residual Δ-pCO$_{2}$ (µatm)'
 
 
@@ -212,7 +211,7 @@ def error_histplot_paneled_monthly(error_sets=[], axs=None, figsize = (18,9),
         for ind, valDF in enumerate(error_sets):
             # histalpha=0.8
             # make sure dataframe has month
-            # valDF = expand_datetime(valDF, type='dataframe')
+            # valDF =mod_ocean.expand_datetime(valDF, type='dataframe')
             plot_data = valDF[valDF.month == monthnum]
 
             if binwidth is None:

@@ -91,7 +91,7 @@ def subset_training_validation(platDF, indexer = 'wmoid', split_frac = 0.8):
     
 #     return fold_training, fold_validation
 
-def subset_folds(platDF, nfolds):
+def subset_folds(platDF, indexer, nfolds):
     """ 
     spatial clustering of observations for cross-validation (k-means)
     returns dictionary of training and validation dataframes for each fold
@@ -114,6 +114,29 @@ def subset_folds(platDF, nfolds):
         fold_validation[('fold'+str(k+1))] = platDF[platDF[indexer].isin(holdout_ids[k])] 
     
     return fold_training, fold_validation
+
+from sklearn.cluster import KMeans
+def subset_spatial_folds(platDF, nfolds):
+    """ returns dictionary of training and validation dataframes for each fold
+    (for combined ship and float platforms)
+    #param:     platDF: dataframe with observations
+    @return     fold_training: dictionary with keys 'fold1', 'fold2', ... each containing training pd Dataframe
+    """
+    fold_training = {('fold'+str(k+1)):None for k in range(nfolds)}
+    fold_validation = {('fold'+str(k+1)):None for k in range(nfolds)}
+
+    kmeans = KMeans(n_clusters=nfolds, random_state=42)
+    platDF['sin_longitude'] = np.sin(np.radians(platDF['longitude']))
+    platDF['cos_longitude'] = np.cos(np.radians(platDF['longitude']))
+    platDF['scaled_latitude'] = -1 + 2*((platDF['latitude'] - platDF['latitude'].min()) / platDF['latitude'].max()) #range -1 to 1
+    platDF['fold'] = kmeans.fit_predict(platDF[['scaled_latitude', 'sin_longitude', 'cos_longitude']])
+
+    for fnum in range(nfolds):
+        fold_validation['fold' + str(fnum+1)] = platDF[platDF['fold'] == fnum].drop(columns=['fold'])
+        fold_training[f'fold{fnum+1}'] = platDF[platDF['fold'] != fnum].drop(columns=['fold'])
+    
+    return fold_training, fold_validation
+
 
 def get_trainval_counts(training_classes, validation_classes, n_gmm=8):
     """  
