@@ -40,4 +40,5 @@ dependencies:
     - argovisHelpers==0.0.26
     - matplotlib-label-lines
     - hatchling
+    - pre-commit # run `pre-commit install` in your repo
     
