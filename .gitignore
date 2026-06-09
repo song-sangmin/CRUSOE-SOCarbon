@@ -1,0 +1,6 @@
+
+src/__pycache__*
+
+# working-vars/
+# src/shapefiles/
+# MATLAB-SOCAT/

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "crusoe"
+version = "0.1.0"
+description = 'Class-conditional Regression Using in Situ observations for Ocean Estimation'
+readme = 'README.md'
+authors=[{name='Sangmin Song', email='sangsong@uw.edu'}]
+
+[tool.setuptools.packages.find]
+where = ["src"]
