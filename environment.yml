@@ -1,4 +1,4 @@
-name: cremas
+name: crusoe-dev
 channels:
   - conda-forge
 dependencies:
@@ -39,4 +39,5 @@ dependencies:
   - pip: 
     - argovisHelpers==0.0.26
     - matplotlib-label-lines
+    - hatchling
     

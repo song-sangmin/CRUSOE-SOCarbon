@@ -1,3 +1,6 @@
+# Module for loading raw and processed data for all notebooks
+# previously mod_loading.py, moved out of src/crusoe/ to src/notebooks/
+
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -12,8 +15,7 @@ from crusoe import mod_preprocessing as mod_prep
 
 # [coreDS, coreINDEX] = loader.import_core_data(type = 'L3_only')
 # [bgcDS, bgcINDEX] = loader.import_bgc_data(type = 'L3_only')
-def print_update():
-    print('loaded now')
+
 
 def import_core_data(type='L3_only'):
     """ 
