@@ -42,4 +42,4 @@ The main file for model development is:
 
 ## Funding 
 
-This work was funded by SOCCOM3
+This work was funded by SOCCOM3.
