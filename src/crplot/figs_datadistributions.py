@@ -8,7 +8,7 @@ import cartopy.crs as ccrs
 
 from crusoe import mod_plotting as mod_plot
 from crusoe import mod_regression as mod_reg
-from plotting import figs_pcm
+from crusoe import plotting as figs_pcm
 
 
 # datatype_colors = {'train' : "#006F83", 

@@ -157,8 +157,8 @@ def add_frontlines(ax, types = ['stf', 'saf', 'pf', 'sacc', 'sie'], sie_alpha=0.
         ax.add_patch(fronts_patch(type, sie_alpha))
 
 def fronts_patch(type='stf', sie_alpha=0.5, sie_zorder=1):
-    so_fronts = shapefile.Reader('./shapefiles/fronts/so_fronts.shp') 
-    stf_mod   = shapefile.Reader('./shapefiles/fronts/stf_mod/stf_mod.shp')
+    so_fronts = shapefile.Reader('../shapefiles/fronts/so_fronts.shp') 
+    stf_mod   = shapefile.Reader('../shapefiles/fronts/stf_mod/stf_mod.shp')
 
     if 'stf' == type:
         stf  = stf_mod.shape(0).points

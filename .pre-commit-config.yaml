@@ -1,0 +1,6 @@
+# repos:
+#   - repo:
+#     rev: 0.1.0  # latest release
+#     hooks:
+#       - id: nbstripout
+#         args: [--keep-output] #remove metadata only 

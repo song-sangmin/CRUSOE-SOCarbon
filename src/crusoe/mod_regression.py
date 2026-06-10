@@ -10,15 +10,11 @@ from xgboost import XGBRegressor
 from sklearn import preprocessing
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
-
-
-
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import r2_score
 
 
-# %% SETUP  RUN TAGS
-
+# %% SETUP RUN TAGS
 def make_feat_dict(feat_lists):
     """ 
     @param    feat_lists: list of lists of feature names for each cluster
@@ -67,30 +63,6 @@ def subset_training_validation(platDF, indexer = 'wmoid', split_frac = 0.8):
 
     return training_data, validation_data, training_ids
 
-# def subset_folds(platDF, indexer, nfolds):
-
-# from sklearn.cluster import KMeans
-# def subset_spatial_folds(platDF, nfolds):
-#     """ returns dictionary of training and validation dataframes for each fold
-#     (for single platform)
-#     #param:     platDF: dataframe for either floatDF or shipDF
-#                 indexer: 'cruiseid' for shipDF, 'wmoid' for floatDF
-#     @return     fold_training: dictionary with keys 'fold1', 'fold2', ... each containing training dataframe
-#     """
-#     # 
-#     # X = platDF[['latitude', 'longitude']]
-#     fold_training = {('fold'+str(k+1)):None for k in range(nfolds)}
-#     fold_validation = {('fold'+str(k+1)):None for k in range(nfolds)}
-
-#     kmeans = KMeans(n_clusters=nfolds, random_state=42)
-#     platDF['fold'] = kmeans.fit_predict(platDF[['latitude', 'longitude']])
-
-#     for fold in range(nfolds):
-#         fold_validation[f'fold{fold+1}'] = platDF[platDF['fold'] == fold].drop(columns=['fold'])
-#         fold_training[f'fold{fold+1}'] = platDF[platDF['fold'] != fold].drop(columns=['fold'])
-    
-#     return fold_training, fold_validation
-
 def subset_folds(platDF, indexer, nfolds):
     """ 
     spatial clustering of observations for cross-validation (k-means)
@@ -118,7 +90,7 @@ def subset_folds(platDF, indexer, nfolds):
 from sklearn.cluster import KMeans
 def subset_spatial_folds(platDF, nfolds):
     """ returns dictionary of training and validation dataframes for each fold
-    (for combined ship and float platforms)
+    (note "indexer" no longer relevant, should run on for combined ship and float platforms)
     #param:     platDF: dataframe with observations
     @return     fold_training: dictionary with keys 'fold1', 'fold2', ... each containing training pd Dataframe
     """
@@ -230,156 +202,6 @@ def separate_platforms(platDF_combined):
     return [floatDF, shipDF]
 
 
-
-# OUTDATED. moving to mod_pcm and doing exclusion before splitting 
-# def exclude_classes(exclude_nums, trainClasses, n_gmm=8, reassign_numbers=True):
-#     """ 
-#     jan 2026 : changing to do one dict at a time
-#     After splitting, remove sea ice zone 
-
-#     # by convention, "class" is what is returned by pcm module, index starting at 0 
-#     # after excluding chosen classes, reassign number to "cluster" starting at 1
-#     # rename probability cols
-#     @ return    exclude_nums: list of class numbers to exclude (e.g. [1, 4])
-
-#     @ param     reassign_numbers: if True, reassign class numbers to be sequential after exclusion
-    
-#     """
-#     valid_classnums = [k for k in range(1, n_gmm+1) if k not in exclude_nums]
-#     # print(trainClasses.keys())
-#     trainClasses_excluded = {}
-
-#     for k in valid_classnums:
-#         # print(valid_classnums)
-#         trainClasses_excluded[k] = trainClasses[k]
-
-#     if reassign_numbers:
-#         trainClasses_excluded = reassign_class_numbers(trainClasses_excluded)
-
-#     # Collapse into new dataframes
-#     trainDF = pd.concat(trainClasses_excluded.values(), axis=0)
-
-#     return [trainClasses_excluded, trainDF]
-
-
-# moved to mod_pc
-# def reassign_class_numbers(trainClasses_valid):
-#     """  Works for valClasses as well"""
-
-#     # If you excluded some, need to renumber the classes
-#     trainClasses_final ={}
-#     # The ind here is the new class number. Iterate over the old labels/keys
-#     for ind, label in enumerate(trainClasses_valid.keys()): # label is the original class number
-#         # Rename the dataframe in each item of trainClasses_valid, and save in new dictionary _final
-#         new_classnum = ind + 1
-#         classDF = trainClasses_valid[label].copy() # original column labels with "classK_prob"
-
-#         # Rename probability columns + cluster column to match new class numbers
-#         renamedDF = classDF[[x for x in classDF.columns if 'prob' not in x]].copy() # don't copy probabilities yet
-#         for ind2, label2 in enumerate(trainClasses_valid.keys()): # 
-#             renamedDF['class' + str(ind2+1) + '_prob'] = classDF['class' + str(label2) + '_prob'] 
-#         renamedDF['cluster'] = np.tile(new_classnum, len(renamedDF))
-        
-#         # Store in new dictionary
-#         trainClasses_final[new_classnum] = renamedDF
-    
-#     return trainClasses_final
-
-
-
-# %% Main training function for RFR
-# OLD FUNCTIONS FROM NOT CLUSTERED VERSION
-# def train_RFR(feat_list, 
-#               training, validation,
-#               var_predict = 'delta_fco2',
-#               loss_criterion = 'absolute_error',
-#               cols_ignore_nans = [],
-#               ntrees=1000, max_feats = 1/3, min_samples_split=5):
-#     """ 
-#     Main method to train the RF model.
-#     Update 04.18.24: Redo bootstrapping. 
-#     @param: 
-#         feat_list: list of features to use in the model
-#         training: training data unscaled, i.e. original range of values
-#         validation: validation data unscaled
-#         test: test data unscaled 
-#         ntrees: 1000 trees by default.
-#         loss_criterion: 'squared_error' (minimise MSE) or 'absolute_error' (MAE)
-
-#     @return:
-#         Mdl: trained RF model
-#         Mdl_results: 
-#         Mdl_prediction: Dataframe with error metrics for the *VALIDATION* set
-#     """
-
-#     Mdl = RandomForestRegressor(ntrees, max_features = max_feats, 
-#                                 criterion = loss_criterion,
-#                                 random_state = 0, bootstrap=True, 
-#                                 min_samples_split=min_samples_split)
-#         #  max_features: use at most X features at each split (m~sqrt(total features))
-
-#     # Drop NaN's without profid or wmoid
-#     use_cols = feat_list + [var_predict]
-#     training_nona = training.dropna(axis=0, subset=use_cols)  
-#     validation_nona = validation.dropna(axis=0, subset=use_cols)
-
-
-#     # OLD dec 2025
-#     # cols_na = [col for col in training.columns if col not in cols_ignore_nans] 
-#     # training_nona = training #.dropna(axis=0, subset=cols_na)  
-#     # validation_nona = validation #.dropna(axis=0, subset=cols_na)
-
-#     # Train the model 
-#     X_training = training_nona[feat_list].to_numpy()
-#     Y_training = training_nona[var_predict].to_numpy()
-#     Mdl.fit(X_training, Y_training)
-
-#     # Estimate and get error predicts
-#     Y_pred_validation = Mdl.predict(validation_nona[feat_list].to_numpy())
-#     AE_RF_validation = np.abs(Y_pred_validation - validation_nona[var_predict])
-#     IQR_RF_validation = iqr(abs(AE_RF_validation))
-#     r2_RF_validation = r2_score(validation_nona[var_predict], Y_pred_validation)
-
-#     # Validation error DF to return
-#     Mdl_prediction = validation_nona.copy() #pd.DataFrame()
-#     Mdl_prediction['val_prediction'] = Y_pred_validation
-#     Mdl_prediction['val_error'] = Y_pred_validation - validation_nona[var_predict]
-#     Mdl_prediction['val_relative_error'] = Mdl_prediction['val_error']/validation_nona[var_predict]
-
-#     Mdl_results = [np.nanmedian(abs(AE_RF_validation)), IQR_RF_validation, r2_RF_validation]
-
-#     return [Mdl, Mdl_results, Mdl_prediction]
-
-
-# def test_RFR(feat_list, Mdl, 
-#               test, 
-#               var_predict = 'delta_fco2'):  
-#     """ For running model once and testing on multiple synthetic test sets."""
-#     # cols_na = [col for col in training.columns if col not in ['profid', 'wmoid', 'AOU', 'dist_maxb']]
-#     # test_nona = test.dropna(axis=0, subset=cols_na)
-#     test_nona = test.dropna(axis=0, subset=feat_list)
-#     X_test = test_nona[feat_list].to_numpy()
-#     Y_test = test_nona[var_predict].to_numpy()
-#     Y_pred_test = Mdl.predict(X_test)
-
-#     # Create dataframe for the test set with depth --> 
-#     Mdl_test_error = test_nona.copy(); 
-#     Mdl_test_error = Mdl_test_error.reset_index(drop=True)
-#     observed = Mdl_test_error[var_predict].to_numpy()
-
-#     # Save new dataframe with test results
-#     Mdl_test_error['test_prediction'] = Y_pred_test
-#     Mdl_test_error['test_error'] = Mdl_test_error['test_prediction'] - observed
-#     Mdl_test_error['test_relative_error'] = Mdl_test_error['test_error']/observed
-
-#     # AE_RF_test = np.abs(Y_pred_test - test_nona[var_predict]) # abs val of Mdl_test_error['test_error']
-#     # IQR_RF_test = iqr(abs(AE_RF_test))
-#     # r2_RF_test = r2_score(test_nona[var_predict], Y_pred_test)
-
-#     return Mdl_test_error
-
-
-
 # %% NEW METHODS FOR CLASS-DEPENDENT REGRESSION
 # UPDATED FEB 2026
 
@@ -479,126 +301,6 @@ def apply_cluster_RFR(feat_list, ClusteredModVer, sampleDF, sample_tag='val',
         sampleDF[sample_tag + '_relative_error'] = sampleDF[sample_tag + '_error'] / sampleDF[target_var]
     
     return sampleDF
-    
-# %% temp xgb hold
-
-from xgboost import XGBRegressor
-
-# # https://xgboost.readthedocs.io/en/latest/treemethod.html
-# # XGBoost: A Scalable Tree Boosting System
-# # Tianqi Chen, Carlos Guestrin
-
-# def fit_cluster_XGB(feat_list, 
-#               trainingDF, 
-#               var_predict = 'delta_fco2',
-#               ntrees=1000, 
-#               booster = 'gbtree',
-#               tree_method = 'approx'):
-#     """ 
-#     Fit single RFR for a class. 
-#     Compute validation errors later 
-#     """
-#     Mdl = XGBRegressor(n_estimators=ntrees, 
-#                       booster = booster, 
-#                       tree_method=tree_method)
-
-#     # Train the model 
-#     X_training = trainingDF[feat_list].to_numpy()
-#     Y_training = trainingDF[var_predict].to_numpy()
-#     Mdl.fit(X_training, Y_training)
-
-#     return Mdl
-
-# def run_clustered_XGB(feat_list, 
-#               trainingDF, 
-#               validationDF,
-#               var_predict = 'delta_pco2',
-#               prob_thresh = 0.3,
-#               cols_ignore_nans = [],
-#               ntrees=1000, booster = 'gbtree',
-#               tree_method = 'approx'):
-#     """ 
-    
-#     """
-#     # Set up object to store models by SO class
-    
-#     k_list = range(1,9) # Number of clusters
-#     training_classes = {k:None for k in k_list}
-
-#     for k in k_list:
-#         # Train regression for each class 
-#         prob_col = 'cluster' + str(k) + '_prob'
-#         training_classes[k] = trainingDF[trainingDF[prob_col] > prob_thresh]
-
-#     clustered_run = myreg.ClusteredModelVersion(ind_list = k_list)
-
-#     # === TRAINING
-#     for k in tqdm(k_list): 
-#         # Set training data by class
-#         training_data = training_classes[k]
-#         # print('Training for class ' + str(k) + ', n=' + str(len(training_data)) + '')
-
-#         clustered_run.models[k] = fit_cluster_XGB(feat_list, 
-#                                 training_data, 
-#                                 var_predict = var_predict, 
-#                                 ntrees = ntrees, booster = 'gbtree',
-#                                 tree_method = 'approx')
-#     # === VALIDATION 
-#     for k in tqdm(k_list): 
-#         # For each row in validationDF, apply the regression to all the data
-#         pred_col = 'cluster' + str(k) + '_pred'
-#         validationDF[pred_col] = clustered_run.models[k].predict(validationDF[feat_list].to_numpy())
-
-#     # Make final predictions by weighting by class probabilities
-#     def weighted_prediction(row):
-#         total = 0
-#         for k in k_list:
-#             prob_col = 'cluster' + str(k) + '_prob'
-#             pred_col = 'cluster' + str(k) + '_pred'
-#             total += row[prob_col] * row[pred_col]
-#         return total
-    
-#     validationDF['weighted_pred'] = validationDF.apply(lambda row: weighted_prediction(row), axis=1)
-#     validationDF['val_error'] = validationDF['weighted_pred'] - validationDF[var_predict]
-#     validationDF['val_relative_error'] = validationDF['val_error'] / validationDF[var_predict]
-
-#     clustered_run.errorDF = validationDF
-
-#     # === ERROR METRICS
-
-#     total_MAE = np.round(np.nanmedian(np.abs(validationDF.val_error)),3)
-#     bias = np.round(np.sum(validationDF.val_error)/len(validationDF),3)
-
-#     validationDF['val_error_sq'] = validationDF['val_error']**2
-#     mse = np.sum(validationDF['val_error_sq']) / len(validationDF.val_error)
-#     rmse = np.sqrt(mse)
-
-#     clustered_run.model_metrics = pd.DataFrame(columns=['MAE', 'bias', 'RMSE'], data=[[total_MAE, bias, rmse]])
-#     print('MAE: ' + str(total_MAE) + ', bias: ' + str(bias) + ', RMSE: ' + str(rmse) + '')
-
-#     return clustered_run
-
-# %% Methods for preparing ML Data
-
-# def subset_data(platDF, indexer = 'profid', split_frac = 0.8):
-#     """ 
-#     @param platDF
-#         indexer: name of dimension to use for splitting ('profid' for Argo, 'sid' for SOCAT)
-#     @return: 
-#         training_data: training data (80% of profiles) 
-#         validation_data: validation data (20% of profiles)
-
-#     """
-#     n_obs = int(split_frac * len(platDF))
-#     ids = np.random.choice(platDF[indexer].unique(), n_obs)
-
-#     training_data = platDF[platDF[indexer].isin(ids)].copy()
-#     validation_data = platDF[~platDF[indexer].isin(ids)].copy()
-
-#     return training_data, validation_data
-
-
-
 
 # %% Classes for storing model results
 class ModelVersion: 
@@ -707,9 +409,6 @@ class NestedModelVersion:
     def copy(self):
         return self
 
-
-
-
 # Make final predictions by weighting by class probabilities
 def weighted_prediction(row, ind_list, pred_col_tag = '_pred'):
     """ ind_list or k_list is range(1,n_gmm+1)
@@ -724,7 +423,6 @@ def weighted_prediction(row, ind_list, pred_col_tag = '_pred'):
         pred_col = 'cluster' + str(k) + pred_col_tag
         total += row[prob_col] * row[pred_col]
     return total
-
 
 
 def summarize_DF_errors(platDF, error_param = 'val_error', target_var = 'delta_pco2'):
@@ -753,7 +451,6 @@ def summarize_DF_errors(platDF, error_param = 'val_error', target_var = 'delta_p
     result = ([median_abs_error, mean_abs_error, bias, rmse])
     return result
 
-# def compare_run_results(storedRuns):
 def storedRuns_comparison(storedRuns, run_tags = None, error_param='val_error', 
                           target_var='delta_pco2',
                           show_platforms = ''): # float, ship, or combined
@@ -769,14 +466,6 @@ def storedRuns_comparison(storedRuns, run_tags = None, error_param='val_error',
         # print('\t features ', feat_options[run_tag.split('-')[0]])
 
         runResults = singleRun.weighted_validation.copy()
-        # OUTDATED below, from before weighting predictions
-        # Better method to collapse errors across classes rather than averaging the medians
-        # runResults = singleRun_collapse_errors(singleRun)
-
-        
-        # runResults['val_error'] = runResults[param] - runResults[target_var]
-        # runResults['val_relative_error'] = runResults['val_error'] / runResults[target_var]
-
         [run_median_abs_error, run_mean_abs_error, run_bias, run_rmse] = summarize_DF_errors(runResults, error_param=error_param)
 
         total_MAEs.loc[run_tag, 'median_AE'] = run_median_abs_error
@@ -793,7 +482,7 @@ def storedRuns_comparison(storedRuns, run_tags = None, error_param='val_error',
     return total_MAEs
 
 
-# %% as it was before weighting error :( )
+# %% 
 def singleRun_collapse_errors(singleRun):
     """ 
     note: used to be collapse_DF_errors() 
@@ -843,57 +532,9 @@ def singleRun_platform_summary(singleRun, error_param = 'val_error'):
 
 
 
-# def get_ModelVersion_results(singleRun, print_results=True):
-#     """ 
-#     the newer version of this (get errors by class in one singleRun is in ()
-#     This is a way to get a dictionary 
-#     singleRun is one ModelVersion object
-#     singleRun = storedRuns[run_tag]
-    
-    
-#     """
-#     result_DF = pd.DataFrame(columns=['MAE', 'IQR', 'R2', 'mean_bias'])
-#     total = []
-#     for key, val in singleRun.errorstats.items():
-#         # print('Class ' + str(key) + ': MAE=' + str(np.round(val[0],2)) + ', IQR=' + str(np.round(val[1],2)) + ', R2=' + str(np.round(val[2],2)) + '')
-#         result_DF.loc[key, 'MAE'] = np.round(val[0],2)
-#         result_DF.loc[key, 'IQR'] = np.round(val[1],2)
-#         result_DF.loc[key, 'R2'] = np.round(val[2],2)
-
-#         total.append(val[0])
-#     total_MAE = np.round(np.mean(total),2) # SHOULD CORRECT THIS
-
-
-#     total=[]
-#     for key, val in singleRun.DF_err.items():
-#         # print(np.round(np.mean(val['val_error']),2))
-#         total.append(np.mean(val['val_error']))
-#     total_bias = np.round(np.mean(total),2)
-
-#     DF_err = pd.concat(singleRun.DF_err.values())
-#     DF_err['val_error_sq'] = DF_err['val_error']**2
-#     mse = np.sum(DF_err['val_error_sq']) / len(DF_err.val_error)
-#     rmse = np.sqrt(mse)
-#     # rmse
-
-#     if print_results:
-#             print(result_DF)
-#             print('Average MAE over classes: ' + str(total_MAE) + ' uatm \n')
-
-#     return [result_DF, total_MAE, total_bias, rmse]
-
-
-# def summarize_class_errors(singleRun):
-
 
 # %% Ancillary functions  
 
-# def get_80_bounds(data):
-#     mean = np.mean(data); std_dev = np.std(data)
-#     low = mean - 1.282 * std_dev
-#     high = mean + 1.282 * std_dev
-#     print('80% bounds: \t' + str(low.round(5)) + ' to ' + str(high.round(5)) )
-#     return [low, high]
 
 
 # def get_95_bounds(data):
@@ -958,28 +599,6 @@ def apply_clustered_calibration(cal_coeffs, valDF, n_clusters, target_var = 'del
     calibrated_valDF['calibrated_relative_error'] = calibrated_valDF['calibrated_error'] / calibrated_valDF[target_var]
     
     return calibrated_valDF
-
-
-    # === Version as of Feb 10 2026 (outdated)
-    # Apply the calibration to the weighted prediction 
-    # data_byClass = {ncluster:df for ncluster, df in valDF.groupby('cluster')}
-
-    # for ncluster in range(1, n_clusters+1):
-    #     class_valDF = data_byClass[ncluster].copy()
-    #     slope, intercept = cal_coeffs[ncluster]
-
-    #     # Apply the linear correction to the weighted_pred column
-    #     class_valDF['lincal_pred'] = class_valDF['weighted_pred'] * slope + intercept
-
-    #     class_valDF['calibrated_error'] = class_valDF['lincal_pred'] - class_valDF[target_var]
-    #     class_valDF['calibrated_relative_error'] = class_valDF['calibrated_error'] / class_valDF[target_var]
-
-
-    #     data_byClass[ncluster] = class_valDF.copy()
-    
-    # return data_byClass
-    return calibrated_valDF
-
 
 def get_clustered_calibration_coeffs(valDF):
     cal_coeffs = {ncluster:None for ncluster in valDF['cluster'].unique()}
